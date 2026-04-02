@@ -6,6 +6,12 @@ const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 class TokenService {
+    /**
+     * @description signs a short-lived access token
+     * @param {mongoose.ObjectId|string} userid 
+     * @param {string|number} [expiresIn='30m'] 
+     * @returns {string} JWT access token
+     */
     genAccesToken(userid, expiresIn = null) {
         return jwt.sign(
             { userid },
@@ -14,6 +20,12 @@ class TokenService {
         );
     }
 
+    /**
+     * @description signs a long-lived refresh token
+     * @param {mongoose.ObjectId|string} userid 
+     * @param {string|number} [expiresIn='15d'] 
+     * @returns {string} JWT refresh token
+     */
     genRefreshToken(userid, expiresIn = null) {
         return jwt.sign(
             { userid },
@@ -22,6 +34,12 @@ class TokenService {
         );
     }
 
+    /**
+     * @description persists refresh token to the database with expiration date
+     * @param {mongoose.ObjectId|string} userid 
+     * @param {string} refreshToken 
+     * @returns {Promise<void>}
+     */
     async saveRefreshToken(userid, refreshToken) {
         await UserRepo.addToken(userid, {
             token: refreshToken,
@@ -29,6 +47,11 @@ class TokenService {
         });
     }
 
+    /**
+     * @description verifies refresh token signature and expiration
+     * @param {string} refreshToken 
+     * @returns {Promise<Object|null>} decoded payload or null if invalid
+     */
     async verifyRefreshToken(refreshToken) {
         try {
             return jwt.verify(refreshToken, JWT_REFRESH_SECRET);
@@ -37,10 +60,22 @@ class TokenService {
         }
     }
 
-    async validateTokenInDb(userid, refreshToken) {
+    /**
+     * @description checks if the refresh token exists in the user's whitelist
+     * @param {mongoose.ObjectId|string} userid 
+     * @param {string} refreshToken 
+     * @returns {Promise<boolean>} true if token is valid and present in DB
+     */
+    async validateToken(userid, refreshToken) {
         return await UserRepo.hasToken(userid, refreshToken);
     }
 
+    /**
+     * @description revokes a specific refresh token from the database
+     * @param {mongoose.ObjectId|string} userid 
+     * @param {string} refreshToken 
+     * @returns {Promise<void>}
+     */
     async removeToken(userid, refreshToken) {
         await UserRepo.removeToken(userid, refreshToken);
     }

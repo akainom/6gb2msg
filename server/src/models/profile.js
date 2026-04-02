@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-const ProfileShema = new Schema({
+const ProfileSchema = new Schema({
     user_id: {
         type: Schema.Types.ObjectId,
         ref: 'User',
@@ -29,8 +29,9 @@ const ProfileShema = new Schema({
         default: ''
     },
     status: {
-        type: Number,
+        type: String,
         enum: ['online', 'offline', 'do not disturb', 'away'],
+        set: v => v === '' ? 'offline' : v,
         default: 'offline' 
     },
     last_online: {
@@ -41,6 +42,19 @@ const ProfileShema = new Schema({
     collection: 'profiles'
 });
 
-const Profile = mongoose.model('Profile', ProfileShema);
+ProfileSchema.methods.getUser = async function(session = null) {
+    if (this.populated('user_id')) {
+        return this.user_id;
+    }
+
+    await this.populate({
+        path: 'user_id',
+        options: { session }
+    })
+
+    return this.user_id;
+}
+
+const Profile = mongoose.model('Profile', ProfileSchema);
 
 module.exports = Profile;

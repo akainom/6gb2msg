@@ -1,59 +1,117 @@
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const UserRepo = require('../repos/user.repo');
-const User = require('../models/user');
+const Profile = require('../models/profile');
+const { ProfileRepo, ProfileDTO } = require('../repos/profile.repo');
+const bcrypt = require('bcryptjs');
+const { als } = require('./als');
+const TokenService = require('./token.service');
 
-const HASH_ROUNDS = 10;
-const REFRESH_EXPIRES_SECONDS = 15 * 24 * 60 * 60;
+class regDTO {
+    /**
+     * @param {string} _email 
+     * @param {string} _password 
+     * @param {string} _username 
+     * @param {string} _authProvider 
+     * @param {string} _avatar 
+     * @param {string} _role 
+     */
+    constructor(_email, _password, _username, _authProvider, _avatar, _role) {
+        this.email = _email;
+        this.password = _password;
+        this.username = _username;
+        this.authProvider = _authProvider;
+        this.avatar = _avatar;
+        this.role = _role;
+        this.createdAt = new Date();
+    }
+}
+
+class Encryptor {
+    /**
+     * @description encrypts sensitive DTO fields before storage
+     * @param {regDTO} dto 
+     * @returns {Promise<Object>} DTO with hashed password
+     */
+    static async encryptDTODefault(dto) {
+        return {
+            ...dto,
+            password: await bcrypt.hash(dto.password, 10),
+        }
+    }
+}
 
 class AuthService {
-    genAccesToken(userid, expiresIn = null) {
-        return jwt.sign(
-            { userid },
-            process.env.JWT_ACCESS_SECRET,
-            { expiresIn: expiresIn ?? '30m' }
-        );
-    }
-
-    genRefreshToken(userid, expiresIn = null) {
-        return jwt.sign(
-            { userid },
-            process.env.JWT_REFRESH_SECRET,
-            { expiresIn: expiresIn ?? '15d' }
-        );
-    }
-
+    /**
+     * @description generates full token pair and saves refresh token to storage
+     * @param {mongoose.ObjectId} userid 
+     * @returns {Promise<Object>} accessToken and refreshToken
+     */
     async genTokens(userid) {
-        const accessToken = this.genAccesToken(userid);
-        const refreshToken = this.genRefreshToken(userid);
+        const accessToken = TokenService.genAccesToken(userid);
+        const refreshToken = TokenService.genRefreshToken(userid);
 
-        await UserRepo.addToken(userid, {
-            token: refreshToken,
-            expiresAt: new Date(Date.now() + (15*24*60*60*1000))
-        })
+        await TokenService.saveRefreshToken(userid, refreshToken);
 
         return { accessToken, refreshToken };
     }
 
+    /**
+     * @description exchanges valid refresh token for a new access token
+     * @param {mongoose.ObjectId} userid 
+     * @param {string} refreshToken 
+     * @returns {Promise<string|null>} new access token
+     */
     async exchangeRefreshToken(userid, refreshToken) {
-        if (!await UserRepo.hasToken(userid, refreshToken)) {
-            return null;
-        }
+        const decoded = await TokenService.verifyRefreshToken(refreshToken);
+        if (!decoded) return null;
+        
+        const isValid = await TokenService.validateToken(userid, refreshToken);
+        if (!isValid) return null;
 
-        return this.genAccesToken(userid);
+        return TokenService.genAccesToken(userid);
     }
 
+    /**
+     * @description rotates refresh token by removing old one and generating new
+     * @param {mongoose.ObjectId} userid 
+     * @param {string} oldRefreshToken 
+     * @returns {Promise<string|null>} new refresh token
+     */
     async getNewRefreshToken(userid, oldRefreshToken) {
-        if (!await UserRepo.hasToken(userid, oldRefreshToken)) {
-            return null;
-        }
+        const decoded = await TokenService.verifyRefreshToken(oldRefreshToken);
+        if (!decoded) return null;
+        
+        const isValid = await TokenService.validateToken(userid, oldRefreshToken);
+        if (!isValid) return null;
 
-        await UserRepo.removeToken(userid, oldRefreshToken);
-        const newRefreshToken = this.genRefreshToken(userid, REFRESH_EXPIRES_SECONDS);
-        await UserRepo.addToken(userid, { 
-            token: newRefreshToken,
-            expiresAt: Date.now() + REFRESH_EXPIRES_SECONDS * 1000
-         })
+        await TokenService.removeToken(userid, oldRefreshToken);
+        
+        const newRefreshToken = TokenService.genRefreshToken(userid);
+        await TokenService.saveRefreshToken(userid, newRefreshToken);
+
+        return newRefreshToken;
     }
+    
+    /**
+     * @description registers new user, creates profile and generates auth tokens
+     * @param {regDTO} data 
+     * @returns {Promise<Object>} profile, newUser and token pair
+     */
+    async registerUser(data) {
+        const regDTO = await Encryptor.encryptDTODefault(data);
+        const profileDTO = new ProfileDTO(regDTO);
 
+        const {profile, newUser} = await ProfileRepo.createWithUser(profileDTO);
+
+        /* NO STORE IN DEBUG
+           idc somewhere else store is called
+        const store = als.getStore();
+        store.set('user', newUser);
+        store.set('profile', profile);
+        */
+
+        const {accessToken, refreshToken} = await this.genTokens(newUser._id);
+
+        return {profile, newUser, accessToken, refreshToken};
+    }
 }
+
+module.exports = {AuthService: new AuthService(), regDTO: regDTO};

@@ -157,7 +157,7 @@ class ProfileRepo extends Base {
     /**
      * 
      * @param {string} username 
-     * @returns {Promise<Object>} true if exists, false otherwise
+     * @returns {Promise<Object>} object, containing public profile and **sensitive** auth data 
      */
     async getAuthContext(username) {
         const profile = await this.model.findOne({ username }).lean();
@@ -169,11 +169,7 @@ class ProfileRepo extends Base {
             user: userData
         }
 
-
-        return {
-            ...profile,
-            user: userData
-        };
+        return AuthCtx;
     }
 
 }

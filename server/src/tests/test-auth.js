@@ -4,13 +4,13 @@ dotenv.config({
     path: __dirname + '/server.test.env'
 })
 const connect = require('../db/connect');
-const { als } = require('../services/als');
+const { als } = require('../mw/als');
 const {AuthService, regDTO, loginDTO} = require('../services/auth.service');
 const { ProfileRepo } = require('../repos/profile.repo');
 
 (async () => {
     try {
-        await connect()        
+        await connect();        
 
         const testUserData = new regDTO('example.com', '12345', 'test_user', 'self', '', 'User');
         await als.run(new Map(), async () => {
@@ -37,8 +37,8 @@ const { ProfileRepo } = require('../repos/profile.repo');
     }
     catch (e) {
         console.error(`FATAL :${e}`);
-        if (e.cause.code) {
-            console.log(`code: ${e.cause.code}, val: ${e.cause.val}`);
+        if (e.code) {
+            console.log(`code: ${e.code}, val: ${e.val}`);
         }
     }
     finally {

@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const Base = require('./base.repo');
 const Profile = require('../models/profile');
 const User = require('../models/user');
-const { als } = require('../services/als');
+const { als } = require('../mw/als');
+const userRepo = require('./user.repo');
 
 class ProfileDTO {
     constructor(data) {
@@ -28,6 +29,17 @@ class ProfileRepo extends Base {
     }
 
     /**
+     * 
+     * @param {string} username 
+     * @returns related user profile
+     */
+    async getByUsername(username) {
+        const profile = await this.model.findOne({ username: username }).lean();
+
+        return profile;
+    }
+
+    /**
      * @description transactional creation of user and related profile
      * @param {ProfileDTO} dto 
      * @returns new user profile
@@ -38,16 +50,42 @@ class ProfileRepo extends Base {
         try {
             const [newUser] = await User.create([dto.user], { session });
 
-            console.log(`new user: \n${JSON.stringify(newUser)}`);
-
             const profile = await this.createForExistingUser(newUser._id, dto, session);
 
             await session.commitTransaction();
             return {profile, newUser};
         } catch (e) {
             await session.abortTransaction();
-            throw e;
+            throw ApiError.BadRequest('profile delete failed', 'ERR_PROF_DEL', profileid);
         } finally {
+            await session.endSession();
+        }
+    }
+
+    /**
+     * @description deletes profile and related user
+     * @param {mongoose.ObjectId} profileid  
+     * @returns {Promise<mongoose.ObjectId} deleted profile id
+     */
+    async deleteProfileWithUser(profileid) {
+        const session = await mongoose.startSession();
+        await session.startTransaction();
+        try {
+            const user_id = await this.getUserId(profileid, session);
+            await userRepo.deleteUser(user_id, session);
+            await this.model.findByIdAndDelete(profileid, { session: session });
+            
+            session.commitTransaction();
+            return profileid;
+        }
+        catch (e) {
+            await session.abortTransaction()
+
+            throw new Error(`profile delete failed`, {
+                cause: { code: 'ERR_PROF_DEL', val: profileid }
+            });
+        }
+        finally {
             await session.endSession();
         }
     }
@@ -88,7 +126,7 @@ class ProfileRepo extends Base {
 
         const user = await profile.getUser(session);
         if (!user) {
-            throw new Error(`FATAL: profile ${profile._id} w/o reference to users`);
+            throw new ApiError(`FATAL: profile ${profile._id} w/o reference to users`, 500, 'ERR_DB_INTEGRITY');
         }
 
         return user;
@@ -96,14 +134,48 @@ class ProfileRepo extends Base {
     
     /**
      * 
-     * @param {mongoose.ObjectId} profileid 
-     * @param {mongoose.ClientSession} session 
+     * @param {string} username  
      * @returns {Promise<mongoose.ObjectId>} related user id
      */
     async getUserId(profileid, session = null) {
-        const user = await this.getUser(profileid, session);
-        return user ? user._id : null;
+        const profile = await this.getById(profileid, session, 'user_id');
+
+        return profile ? profile.user_id : null;
     }
+
+    /**
+     * 
+     * @param {string} username 
+     * @returns {Promise<Boolean>} true if exists, false otherwise
+     */
+    async usernameExists(username) {
+        const usernameExists = await this.model.exists({ username });
+
+        return usernameExists ? true : false;
+    }
+
+    /**
+     * 
+     * @param {string} username 
+     * @returns {Promise<Object>} true if exists, false otherwise
+     */
+    async getAuthContext(username) {
+        const profile = await this.model.findOne({ username }).lean();
+        if (!profile) return null;
+
+        const userData = await userRepo.getAuthData(profile.user_id);
+        const AuthCtx = {
+            ...profile,
+            user: userData
+        }
+
+
+        return {
+            ...profile,
+            user: userData
+        };
+    }
+
 }
 
 module.exports = {ProfileRepo: new ProfileRepo(), ProfileDTO: ProfileDTO};

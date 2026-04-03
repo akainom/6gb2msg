@@ -27,16 +27,7 @@ const ProfileSchema = new Schema({
     location: {
         type: String,
         default: ''
-    },
-    status: {
-        type: String,
-        enum: ['online', 'offline', 'do not disturb', 'away'],
-        set: v => v === '' ? 'offline' : v,
-        default: 'offline' 
-    },
-    last_online: {
-        type: Date,
-    },
+    }
 }, {
     timestamps: true,
     collection: 'profiles'

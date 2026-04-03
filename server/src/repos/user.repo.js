@@ -1,8 +1,8 @@
-const { default: mongoose } = require('mongoose');
+const mongoose = require('mongoose');
 const User = require('../models/user');
 const Base = require('./base.repo');
 
-class UserRepository extends Base {
+class UserRepo extends Base {
     constructor() {
         super(User);
     }
@@ -80,7 +80,7 @@ class UserRepository extends Base {
     /**
      * @description clears all refresh tokens for the specified user
      * @param {mongoose.ObjectId} userid 
-     * @param {mongoose.ClientSession} [session=null]
+     * @param {mongoose.ClientSession} session
      * @returns {Promise<Object|null>} updated user document
      */
     async removeAllTokens(userid, session = null) {
@@ -90,6 +90,33 @@ class UserRepository extends Base {
             { session, new: true }
         ).lean();
     }
+
+    /**
+     * 
+     * @param {string} email 
+     * @returns {Promise<Boolean>} true if exists, false otherwise
+     */
+    async emailExists(email) {
+        const emailExists = await this.model.exists({ email });
+
+        return emailExists ? true : false;
+    }
+
+    async getUserId(email) {
+        const userid = await this.model.findOne({ email }).select('_id').lean();
+
+        return userid ? userid : null;
+    }
+
+    async getAuthData(userid) {
+        const user = await this.getById(userid, null, '+password');
+
+        return { email: user.email, passwordHash: user.password, user_id: user._id };
+    }
+
+    async deleteUser(userid, session = null) {
+        return await this.model.findByIdAndDelete(userid, { session: session });
+    }
 }
 
-module.exports = new UserRepository();
+module.exports = new UserRepo();

@@ -1,8 +1,22 @@
-const Profile = require('../models/profile');
 const { ProfileRepo, ProfileDTO } = require('../repos/profile.repo');
 const bcrypt = require('bcryptjs');
-const { als } = require('./als');
+const { als } = require('../mw/als');
+const { ApiError } = require('../mw/exception'); 
 const TokenService = require('./token.service');
+const UserRepo = require('../repos/user.repo');
+
+class loginDTO {
+    /**
+     * 
+     * @param {string} _username 
+     * @param {string} _password 
+     */
+    constructor(_username, _email, _password) {
+        this.username = _username;
+        this.password = _password;
+        
+    }
+}
 
 class regDTO {
     /**
@@ -36,6 +50,10 @@ class Encryptor {
             password: await bcrypt.hash(dto.password, 10),
         }
     }
+
+    static async comparePasswords(password, hash) {
+        return await bcrypt.compare(password, hash);
+    }
 }
 
 class AuthService {
@@ -57,16 +75,22 @@ class AuthService {
      * @description exchanges valid refresh token for a new access token
      * @param {mongoose.ObjectId} userid 
      * @param {string} refreshToken 
-     * @returns {Promise<string|null>} new access token
+     * @returns {Promise<Object|null>} new tokens
      */
     async exchangeRefreshToken(userid, refreshToken) {
-        const decoded = await TokenService.verifyRefreshToken(refreshToken);
-        if (!decoded) return null;
-        
-        const isValid = await TokenService.validateToken(userid, refreshToken);
-        if (!isValid) return null;
+        try {
+            const decoded = await TokenService.verifyRefreshToken(refreshToken);
+            
+            if (!decoded) return null;
+            const isValid = await TokenService.validateToken(userid, refreshToken);
+            if (!isValid) return null;
+            await TokenService.removeToken(userid, refreshToken);
 
-        return TokenService.genAccesToken(userid);
+            return await this.genTokens(userid);
+        } catch (e) {
+            if (e.code) return false; 
+            throw ApiError.BadRequest('exchange failed', 'ERR_EXC_FAIL', { userid, refreshToken });
+        }
     }
 
     /**
@@ -76,27 +100,40 @@ class AuthService {
      * @returns {Promise<string|null>} new refresh token
      */
     async getNewRefreshToken(userid, oldRefreshToken) {
-        const decoded = await TokenService.verifyRefreshToken(oldRefreshToken);
-        if (!decoded) return null;
-        
-        const isValid = await TokenService.validateToken(userid, oldRefreshToken);
-        if (!isValid) return null;
+        try {
+            const decoded = await TokenService.verifyRefreshToken(oldRefreshToken);
+            if (!decoded) return null;
+            
+            const isValid = await TokenService.validateToken(userid, oldRefreshToken);
+            if (!isValid) return null;
 
-        await TokenService.removeToken(userid, oldRefreshToken);
-        
-        const newRefreshToken = TokenService.genRefreshToken(userid);
-        await TokenService.saveRefreshToken(userid, newRefreshToken);
+            await TokenService.removeToken(userid, oldRefreshToken);
+            
+            const newRefreshToken = TokenService.genRefreshToken(userid);
+            await TokenService.saveRefreshToken(userid, newRefreshToken);
 
-        return newRefreshToken;
+            return newRefreshToken;
+        } catch (e) {
+            throw ApiError.BadRequest('refresh token invalid', 'ERR_TKN_INV', oldRefreshToken);
+        }
     }
     
     /**
      * @description registers new user, creates profile and generates auth tokens
      * @param {regDTO} data 
-     * @returns {Promise<Object>} profile, newUser and token pair
+     * @returns {Promise<Object>} profile, new user and token pair
      */
     async registerUser(data) {
         const regDTO = await Encryptor.encryptDTODefault(data);
+
+        if (await UserRepo.emailExists(data.email)) {
+            throw ApiError.BadRequest('registration failed', 'ERR_EMAIL_EX', data.email);
+        }
+        
+        if (await ProfileRepo.usernameExists(data.username)) {
+            throw ApiError.BadRequest('registration failed', 'ERR_UNAME_EX', data.username);
+        }
+
         const profileDTO = new ProfileDTO(regDTO);
 
         const {profile, newUser} = await ProfileRepo.createWithUser(profileDTO);
@@ -112,6 +149,37 @@ class AuthService {
 
         return {profile, newUser, accessToken, refreshToken};
     }
+
+    /**
+     * @description verifies provided auth data
+     * @param {loginDTO} data 
+     * @returns {Promise<Object>} access token, 
+     */
+    async login(data) {
+        try {
+            const authCtx = await ProfileRepo.getAuthContext(data.username);
+            if (!authCtx) {
+                throw ApiError.NotFound('authentication failed', 'ERR_USR_NF', data.username)
+            }
+
+            const passwordCorrect = await Encryptor.comparePasswords(data.password, authCtx.user.passwordHash);
+            if (!passwordCorrect) {
+                throw ApiError.BadRequest('authentication failed', 'ERR_PASSWD_INC', data.password);
+            } else {
+                // success login
+                const tokens = await this.genTokens(authCtx.user_id);
+                const { 
+                    user: { passwordHash, ...safeUser },
+                    ...safeUserData
+                } = authCtx
+                return { accessToken: tokens.accessToken, ...safeUserData, user: safeUser };
+            }
+        }
+        catch (e) {
+            if (e instanceof ApiError) throw e;
+            throw ApiError.BadRequest('authentication failed', 'ERR_CRED_INC', data.username);
+        }
+    }
 }
 
-module.exports = {AuthService: new AuthService(), regDTO: regDTO};
+module.exports = {AuthService: new AuthService(), regDTO: regDTO, loginDTO: loginDTO};

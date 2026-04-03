@@ -3,14 +3,14 @@ const dotenv = require('dotenv');
 dotenv.config({
     path: __dirname + '/server.test.env'
 })
-
+const connect = require('../db/connect');
 const { als } = require('../services/als');
-const {AuthService, regDTO} = require('../services/auth.service');
+const {AuthService, regDTO, loginDTO} = require('../services/auth.service');
+const { ProfileRepo } = require('../repos/profile.repo');
 
 (async () => {
     try {
-        await mongoose.connect('mongodb://192.168.100.8:2000/6gb2msg?directConnection=true&replicaSet=rs0');
-        console.log('mongoDB connected');        
+        await connect()        
 
         const testUserData = new regDTO('example.com', '12345', 'test_user', 'self', '', 'User');
         await als.run(new Map(), async () => {
@@ -27,11 +27,19 @@ const {AuthService, regDTO} = require('../services/auth.service');
             const store = als.getStore();
             console.log(`ALS store: ${Object.fromEntries(store)}`);
 
+            console.log(`\n=========== TRYING TO LOG IN ===========\n`);
+            const loginResult = await AuthService.login(new loginDTO(testUserData.username, testUserData.email, testUserData.password));
+            console.log(`login result: ${loginResult}`);
+
+            console.log('deleted: ' + await ProfileRepo.deleteProfileWithUser(result.profile._id));
             
         })
     }
     catch (e) {
         console.error(`FATAL :${e}`);
+        if (e.cause.code) {
+            console.log(`code: ${e.cause.code}, val: ${e.cause.val}`);
+        }
     }
     finally {
         await mongoose.disconnect();

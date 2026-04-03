@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const UserRepo = require('../repos/user.repo');
+const { ApiError } = require('../mw/exception'); 
+
 
 const REFRESH_EXPIRES_SECONDS = 15 * 24 * 60 * 60;
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
@@ -56,7 +58,7 @@ class TokenService {
         try {
             return jwt.verify(refreshToken, JWT_REFRESH_SECRET);
         } catch (e) {
-            return null;
+            throw ApiError.BadRequest('refresh token verify failed', 'ERR_JWT_VER', refreshToken);
         }
     }
 
@@ -76,8 +78,8 @@ class TokenService {
      * @param {string} refreshToken 
      * @returns {Promise<void>}
      */
-    async removeToken(userid, refreshToken) {
-        await UserRepo.removeToken(userid, refreshToken);
+    async removeToken(userid, refreshToken, session = null) {
+        await UserRepo.removeToken(userid, refreshToken, session);
     }
 }
 

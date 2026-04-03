@@ -1,3 +1,5 @@
+const mongoose = require('mongoose');
+
 class BaseRepository {
     /**
      * @param {mongoose.Model} model - Mongoose model instance
@@ -8,12 +10,18 @@ class BaseRepository {
 
     /**
      * @description fetches a single document by its unique ID
-     * @param {mongoose.ObjectId|string} id 
-     * @param {mongoose.ClientSession} [session=null]
+     * @param {mongoose.ObjectId|string} id
+     * @param {mongoose.ClientSession} session
+     * @param {string} additionalFieldsQuery fields that would be passed to .select() method
      * @returns {Promise<Object|null>} plain object if found
      */
-    async getById(id, session = null) {
-        return this.model.findById(id).session(session).lean();
+    async getById(id, session = null, additionalFieldsQuery = '') {
+        let q = this.model.findById(id).session(session);
+        if (additionalFieldsQuery != '') {
+            q.select(additionalFieldsQuery);
+        }
+
+        return await q.lean();
     }
 
     /**

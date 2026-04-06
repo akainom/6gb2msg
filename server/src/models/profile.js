@@ -36,6 +36,11 @@ const ProfileSchema = new Schema({
     },
     last_online: {
         type: Date,
+    },
+    isComplete: {
+        type: Boolean,
+        default: false,
+        required: true
     }
 }, {
     timestamps: true,

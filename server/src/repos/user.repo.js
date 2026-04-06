@@ -2,6 +2,17 @@ const mongoose = require('mongoose');
 const User = require('../models/user');
 const Base = require('./base.repo');
 
+class userDTO {
+    constructor(email, password, authProvider, role) {
+        this.email = email;
+        this.password = password;
+        this.authProvider = authProvider;
+        this.role = role;
+
+        this.createdAt = new Date();
+    }
+}
+
 class UserRepo extends Base {
     constructor() {
         super(User);
@@ -12,12 +23,20 @@ class UserRepo extends Base {
      * @param {mongoose.ObjectId} userid 
      * @returns {Promise<Array>} array of refresh token objects
      */
-    async getTokens(userid) {
-        const user = await this.model.findById(userid)
-            .select('refreshTokens')
-            .lean();
+    async getFreshToken(userid) {
+        const bufferTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
         
-        return user?.refreshTokens ?? [];
+        const user = await this.model.findOne({
+            _id: userid,
+            refreshTokens: { 
+                $elemMatch: { expiresAt: { $gt: bufferTime } } 
+            }
+        }).select('refreshTokens').lean();
+
+        if (!user || !user.refreshTokens.length) return null;
+
+        const fresh = user.refreshTokens.find(t => t.expiresAt > bufferTime);
+        return fresh ? fresh.token : null;
     }
 
     /**
@@ -67,7 +86,7 @@ class UserRepo extends Base {
      * @param {mongoose.ObjectId} userid 
      * @param {string} refreshToken 
      * @param {mongoose.ClientSession} [session=null]
-     * @returns {Promise<Object|null>} updated user document
+     * @returns {Promise<Object|null>} updated user document    
      */
     async removeToken(userid, refreshToken, session = null) {
         return await this.model.findByIdAndUpdate(
@@ -106,6 +125,18 @@ class UserRepo extends Base {
         const userid = await this.model.findOne({ email }).select('_id').lean();
 
         return userid ? userid : null;
+    }
+
+    async getBySSO(ssoId) {
+        const user = await this.model.findOne({ ssoId }).lean();
+
+        return user ? user : null;
+    }
+
+    async getByEmailHash(email) {
+        const user = await this.model.findOne({ emailHash: email }).lean();
+
+        return user ? user : null;
     }
 
     async getAuthData(userid) {

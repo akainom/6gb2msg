@@ -23,6 +23,18 @@ class TokenService {
     }
 
     /**
+     * @param {string} accessToken
+     * @returns {{ userid: string }} decoded payload
+     */
+    verifyAccessToken(accessToken) {
+        try {
+            return jwt.verify(accessToken, JWT_ACCESS_SECRET);
+        } catch (e) {
+            throw ApiError.Forbidden('access token invalid or expired', 'ERR_JWT_ACC', null);
+        }
+    }
+
+    /**
      * @description signs a long-lived refresh token
      * @param {mongoose.ObjectId|string} userid 
      * @param {string|number} [expiresIn='15d'] 

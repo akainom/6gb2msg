@@ -2,16 +2,21 @@ const mongoose = require('mongoose');
 const Base = require('./base.repo');
 const Profile = require('../models/profile');
 const User = require('../models/user');
-const { als } = require('../mw/als');
 const userRepo = require('./user.repo');
+const { als } = require('../mw/als');
+const { ApiError } = require('../mw/exception')
 
 class ProfileDTO {
     constructor(data) {
         this.user = {};
         this.user.email = data.email ?? '';
+        this.user.emailHash = data.emailHash ?? '';
         this.user.password = data.password ?? '';
-        this.user.authProvier = data.authProvier ?? '';
+        this.user.authProvider = data.authProvider ?? '';
         this.user.role = data.role ?? '';
+        if (data.ssoId) {
+            this.user.ssoId = data.ssoId;
+        }
         this.user.createdAt = new Date();
 
         this.username = data.username ?? '';
@@ -20,6 +25,7 @@ class ProfileDTO {
         this.location = data.location ?? '';
         this.status = data.status ?? '';
         this.last_online = new Date()
+        this.isComplete = data.isComplete ?? false;
     }
 }
 
@@ -30,38 +36,15 @@ class ProfileRepo extends Base {
 
     /**
      * 
-     * @param {string} username 
+     * @param {mongoose.ObjectId} userid 
      * @returns related user profile
      */
-    async getByUsername(username) {
-        const profile = await this.model.findOne({ username: username }).lean();
+    async getByUserId(userid) {
+        const profile = await this.model.findOne({ user_id: userid }).lean();
 
         return profile;
     }
-
-    /**
-     * @description transactional creation of user and related profile
-     * @param {ProfileDTO} dto 
-     * @returns new user profile
-    */
-    async createWithUser(dto) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        try {
-            const [newUser] = await User.create([dto.user], { session });
-
-            const profile = await this.createForExistingUser(newUser._id, dto, session);
-
-            await session.commitTransaction();
-            return {profile, newUser};
-        } catch (e) {
-            await session.abortTransaction();
-            throw ApiError.BadRequest('profile delete failed', 'ERR_PROF_DEL', profileid);
-        } finally {
-            await session.endSession();
-        }
-    }
-
+    
     /**
      * @description deletes profile and related user
      * @param {mongoose.ObjectId} profileid  
@@ -75,7 +58,7 @@ class ProfileRepo extends Base {
             await userRepo.deleteUser(user_id, session);
             await this.model.findByIdAndDelete(profileid, { session: session });
             
-            session.commitTransaction();
+            await session.commitTransaction();
             return profileid;
         }
         catch (e) {
@@ -89,6 +72,47 @@ class ProfileRepo extends Base {
             await session.endSession();
         }
     }
+
+    /**
+     * @description transactional creation of user and related profile
+     * @param {ProfileDTO} dto 
+     * @returns new user and profile
+    */
+    async createWithUser(dto) {
+        console.log('Mongoose state:', mongoose.connection.readyState);
+        const client = User.db.getClient();
+        const session = client.startSession();
+        session.startTransaction();
+        try {
+            const newUser = new User(dto.user);
+            await newUser.save({ session });
+
+            const newProfile = await this.createForExistingUser(newUser._id, dto, session);
+
+            await session.commitTransaction();
+            return {newProfile, newUser};
+        } catch (e) {
+            await session.abortTransaction();
+            console.error('createWithUser error:', e);
+            if (e instanceof ApiError) throw e;
+            if (e.code === 11000) {
+
+                const field = Object.keys(e.keyPattern)[0];
+                if (field === 'emailHash' || field === 'email') {
+                    throw ApiError.BadRequest('registration failed', 'ERR_EMAIL_EX', null);
+                }
+                if (field === 'username') {
+                    throw ApiError.BadRequest('registration failed', 'ERR_UNAME_EX', null);
+                }
+                throw ApiError.BadRequest('duplicate field', 'ERR_DUPLICATE', field);
+            }
+            throw ApiError.BadRequest('profile create failed', 'ERR_PROF_CRT', null);
+        } finally {
+            await session.endSession();
+        }
+    }
+
+    
     /**
      * @description creates profile from existing user record
      * @param {mongoose.ObjectId} userId 
@@ -104,7 +128,8 @@ class ProfileRepo extends Base {
             bio: dto.bio,
             location: dto.location,
             status: dto.status,
-            last_online: dto.last_online
+            last_online: dto.last_online,
+            isComplete: dto.isComplete
         }], { session });
 
         return profile;
@@ -152,6 +177,41 @@ class ProfileRepo extends Base {
         const usernameExists = await this.model.exists({ username });
 
         return usernameExists ? true : false;
+    }
+
+    /**
+     * @description finalizes OAuth signup, sets isComplete
+     * @param {mongoose.Types.ObjectId|string} userId
+     * @param {{ username: string, bio?: string, location?: string, avatar?: string }} data
+     * @returns {Promise<Object>} updated profile (plain)
+     */
+    async finalizeProfile(userId, data) {
+        const { username, bio, location, avatar } = data;
+
+        const profile = await this.getByUserId(userId);
+        
+        if (!profile) {
+            throw ApiError.NotFound('profile not found', 'ERR_PROF_NF', userId);
+        }
+        if (profile.isComplete) {
+            throw ApiError.BadRequest('profile already complete', 'ERR_PROF_DONE', null);
+        }
+
+        const taken = await this.usernameExists(username);
+        if (taken) {
+            throw ApiError.BadRequest('username taken', 'ERR_UNAME_EX', username);
+        }
+
+        const $set = { username: username, isComplete: true };
+        if (bio !== undefined) $set.bio = bio;
+        if (location !== undefined) $set.location = location;
+        if (avatar !== undefined) $set.avatar = avatar;
+
+        return await this.model.findByIdAndUpdate(
+            profile._id,
+            { $set },
+            { new: true, runValidators: true }
+        ).lean();
     }
 
     /**

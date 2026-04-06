@@ -9,16 +9,25 @@ const UserSchema = new Schema ({
         lowercase: true,
         trim: true
     },
+    emailHash: {
+        type: String,
+        required: true
+    },
+    authProvider: {
+        type: String,
+        unique  : true,
+        sparse: true
+    },
     password: {
         type: String,
         required: function() {
-            return !this.authProvdider
+            return !this.authProvider
         },
         select: false
     },
-    authProvdider: {
+    ssoId: {
+        required: false,
         type: String,
-        unique: true,
         sparse: true
     },
     role: {
@@ -51,6 +60,8 @@ const UserSchema = new Schema ({
     timestamps: true,
     collection: 'users'
 });
+
+UserSchema.index({ ssoId: 1, emailHash: 1 });
 
 const User = mongoose.model('User', UserSchema);
 

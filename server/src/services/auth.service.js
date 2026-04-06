@@ -4,6 +4,9 @@ const { als } = require('../mw/als');
 const { ApiError } = require('../mw/exception'); 
 const TokenService = require('./token.service');
 const UserRepo = require('../repos/user.repo');
+const mongoose = require('mongoose');
+const profileRepo = require('../repos/profile.repo');
+const crypto = require('crypto');
 
 class loginDTO {
     /**
@@ -11,10 +14,9 @@ class loginDTO {
      * @param {string} _username 
      * @param {string} _password 
      */
-    constructor(_username, _email, _password) {
+    constructor(_username, _password) {
         this.username = _username;
         this.password = _password;
-        
     }
 }
 
@@ -32,9 +34,18 @@ class regDTO {
         this.password = _password;
         this.username = _username;
         this.authProvider = _authProvider;
-        this.avatar = _avatar;
-        this.role = _role;
+        this.avatar = _avatar ?? 'transparent.png';
+        this.role = _role ?? 'User';
         this.createdAt = new Date();
+    }
+
+    static fromGoogleProfile(data, avatar) {
+        const params = {
+            email: data.emailAddresses[0].value,
+            authProvider: 'google',
+            avatar: avatar,
+            role: 'User',    
+        }
     }
 }
 
@@ -44,16 +55,26 @@ class Encryptor {
      * @param {regDTO} dto 
      * @returns {Promise<Object>} DTO with hashed password
      */
+
+    static hashEmail(email) {
+        return crypto.createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
+    }
+
     static async encryptDTODefault(dto) {
         return {
             ...dto,
-            password: await bcrypt.hash(dto.password, 10),
+            password: dto.password ? await bcrypt.hash(dto.password, 10) : null,
+            emailHash: Encryptor.hashEmail(dto.email)
         }
     }
 
     static async comparePasswords(password, hash) {
         return await bcrypt.compare(password, hash);
     }
+
+    static genRandomizedString() {
+        return `${Math.ceil(Math.random() * 10**9)}`;
+    } 
 }
 
 class AuthService {
@@ -64,9 +85,12 @@ class AuthService {
      */
     async genTokens(userid) {
         const accessToken = TokenService.genAccesToken(userid);
-        const refreshToken = TokenService.genRefreshToken(userid);
+        let refreshToken = await UserRepo.getFreshToken(userid);
 
-        await TokenService.saveRefreshToken(userid, refreshToken);
+        if (!refreshToken) {
+            refreshToken = TokenService.genRefreshToken(userid);
+            await TokenService.saveRefreshToken(userid, refreshToken);
+        } 
 
         return { accessToken, refreshToken };
     }
@@ -126,7 +150,7 @@ class AuthService {
     async registerUser(data) {
         const regDTO = await Encryptor.encryptDTODefault(data);
 
-        if (await UserRepo.emailExists(data.email)) {
+        if (await UserRepo.getByEmailHash(Encryptor.hashEmail(data.email))) {
             throw ApiError.BadRequest('registration failed', 'ERR_EMAIL_EX', data.email);
         }
         
@@ -134,9 +158,9 @@ class AuthService {
             throw ApiError.BadRequest('registration failed', 'ERR_UNAME_EX', data.username);
         }
 
-        const profileDTO = new ProfileDTO(regDTO);
+        const profileDTO = new ProfileDTO({...regDTO, isComplete: true});
 
-        const {profile, newUser} = await ProfileRepo.createWithUser(profileDTO);
+        const {newProfile, newUser} = await ProfileRepo.createWithUser(profileDTO);
 
         /* NO STORE IN DEBUG
            idc somewhere else store is called
@@ -147,7 +171,7 @@ class AuthService {
 
         const {accessToken, refreshToken} = await this.genTokens(newUser._id);
 
-        return {profile, newUser, accessToken, refreshToken};
+        return {profile: newProfile, user: newUser, accessToken, refreshToken};
     }
 
     /**
@@ -172,12 +196,90 @@ class AuthService {
                     user: { passwordHash, ...safeUser },
                     ...safeUserData
                 } = authCtx
-                return { accessToken: tokens.accessToken, ...safeUserData, user: safeUser };
+                return { ...tokens,  ...safeUserData, user: safeUser };
             }
         }
         catch (e) {
             if (e instanceof ApiError) throw e;
             throw ApiError.BadRequest('authentication failed', 'ERR_CRED_INC', data.username);
+        }
+    }
+
+    async authenticateOAuthGoogle(data, _avatar, refreshToken) {
+        const email = data.emailAddresses[0].value;
+        const authProvider = 'google';
+        const avatar = _avatar;
+        const role = 'User';    
+        const ssoId = data.metadata.sources[0].id;
+
+        let isNewUser = true;
+        let profile = {};
+        let user = await UserRepo.getBySSO(ssoId);
+        if (!user) {
+            user = await UserRepo.getByEmailHash(Encryptor.hashEmail(email));
+            isNewUser = user ? false : true;
+        } else {
+            isNewUser = false;
+        }
+
+        if (isNewUser) {
+            const tempUsername = `user_${Encryptor.genRandomizedString()}`;
+            let regData = new regDTO(email, null, tempUsername, 'google', avatar);
+            regData = await Encryptor.encryptDTODefault(regData);
+            const {newProfile, newUser} = await ProfileRepo.createWithUser(new ProfileDTO({ ...regData, isComplete: false, ssoId: ssoId }));
+            user = newUser;
+            profile = newProfile;
+        } else {
+            profile = await ProfileRepo.getByUserId(user._id);
+        }
+
+        const tokens = await this.genTokens(user._id);
+        return {
+            ...tokens,
+            user_id: user._id,
+            profile,
+        }
+    }
+
+    /**
+     * 
+     * @param {mongoose.ObjectId} userid 
+     * @param {{ username: string, bio?: string, location?: string, avatar?: string }} data 
+     * @returns {Promise<Object>} updated profile (plain)
+     */
+    async completeOAuthRegistration(userid, data) {
+        try {
+            return await ProfileRepo.finalizeProfile(userid, data);
+        } catch (e) {
+            if (e instanceof ApiError) throw e;
+            throw ApiError.BadRequest('unable to complete profile', 'ERR_PROF_!COMPL', {userid});
+        }
+    }
+
+    /**
+     * @param {mongoose.ObjectId} userid 
+     * @param {string} refreshToken 
+     * @returns {Promise<Boolean>} true if token removed 
+     */
+    async logout(userid, refreshToken) {
+        try {
+            await UserRepo.removeToken(userid, refreshToken);
+            return true;
+        } catch (e) {
+            throw ApiError.BadRequest(`incorrect token or user id`, `ERR_REFR_INC`, { userid, refreshToken });
+        }
+    }
+
+    /**
+     * @param {mongoose.ObjectId} userid
+     * @returns {Promise<Boolean>} true if tokens removed 
+     */
+    async logoutAllTokens(userid) {
+        try {
+            await UserRepo.removeAllTokens(userid);
+            return true;
+        } catch (e) {
+            throw ApiError.BadRequest(`unable to remove tokens`, `ERR_REFR_ALL_FAIL`, userid);
         }
     }
 }

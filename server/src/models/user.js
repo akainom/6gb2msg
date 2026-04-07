@@ -15,7 +15,6 @@ const UserSchema = new Schema ({
     },
     authProvider: {
         type: String,
-        unique  : true,
         sparse: true
     },
     password: {

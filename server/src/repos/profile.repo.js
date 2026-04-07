@@ -79,7 +79,6 @@ class ProfileRepo extends Base {
      * @returns new user and profile
     */
     async createWithUser(dto) {
-        console.log('Mongoose state:', mongoose.connection.readyState);
         const client = User.db.getClient();
         const session = client.startSession();
         session.startTransaction();

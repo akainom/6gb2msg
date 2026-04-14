@@ -12,7 +12,7 @@ app.use(cookieParser());
 app.use(alsmiddleware);
 
 app.use('/auth', require('./routes/auth.routes'));
-
+app.use('/chats', require('./routes/chats.routes'));
 app.use(ApiErrorMiddlewareFunction);
 
 module.exports = app;

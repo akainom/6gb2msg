@@ -44,7 +44,7 @@ function validatePassword(password) {
 }
 
 function validateUsername(username) {
-    const len = username.length > 5 && username.length < 15;
+    const len = username.length > 5 && username.length < 16;
     const lang = /^[a-zA-Z0-9_]+$/.test(username);
     return len & lang;
 }

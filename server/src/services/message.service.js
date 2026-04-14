@@ -115,17 +115,11 @@ class MessageService {
     }
 
     async forwardMessage(chatId, messageId, fromId) {
-        const isParticipant = await this._requireParticipant(chatId, fromId);
-        if (!isParticipant) {
-            throw ApiError.Forbidden('not a participant', 'ERR_MSG_FORB', {messageId, chatId, fromId});
-        }
+        await this._requireParticipant(chatId, fromId);
 
         const message = await messageRepo.getById(messageId);
-        const ok = await this._requireParticipant(message.chat_id, fromId);
-        if (!ok) {
-            throw ApiError.Forbidden('not a participant', 'ERR_MSG_FORB', {messageId, chatId: message.chatId, fromId});
-        }
-
+        await this._requireParticipant(message.chat_id, fromId);
+        
         return await messageRepo.transactCall(async (self, bag, session) => {
             return await self.forwardMessage(chatId, message, fromId, session);
         },

@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const chatRepo = require('../repos/chat.repo');
 const messageRepo = require('../repos/message.repo');
 const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const IDX_MESSAGES = process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1';
 
 function previewText(content, max = 120) {
     if (!content) return '';
@@ -64,6 +66,38 @@ class MessageService {
     async listMessages(userId, chatId, opt = { limit: 30, skip: 0 }) {
         await this._requireParticipant(chatId, userId);
         return messageRepo.getByChat(chatId, opt);
+    }
+
+    async searchInChat(chatId, query, userId, opt = {}) {
+        await this._requireParticipant(chatId, userId);
+
+        const q = (query ?? '').trim();
+        if (!q) {
+            throw ApiError.BadRequest('search query is empty', 'ERR_SEARCH_Q_EMPTY');
+        }
+
+        const limit = Number(opt.limit ?? 20);
+        const skip = Number(opt.skip ?? 0);
+
+        if (limit > 100) limit = 100;
+        if (skip < 0) skip = 0;
+
+        const result = await es.search({
+            index: IDX_MESSAGES,
+            from: skip,
+            size: limit,
+            query: {
+                bool: {
+                    filter: [{ term: { chat_id: String(chatId) } }],
+                    must: [{ match: { content: { query: q, fuzziness: 'AUTO' } } }]
+                }
+            },
+        });
+
+        return {
+            total: result.hits?.total?.value ?? 0,
+            messages: result.hits?.hits?.map(hit => ({ _id: hit._id, ...hit._source })) ?? [],
+        };
     }
 
     /**

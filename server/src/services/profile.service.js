@@ -1,6 +1,8 @@
 const { ProfileRepo } = require('../repos/profile.repo');
 const UserRepo = require('../repos/user.repo');
 const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const IDX_PROFILES = process.env.ELASTIC_INDEX_PROFILES;
 
 class ProfileService {
 
@@ -96,25 +98,62 @@ class ProfileService {
         );
     }
 
-    /**
-     * @description searches profiles by username prefix
+        /**
+     * @description searches profiles by username
      * @param {string} query
-     * @param {{ limit?: number, skip?: number }} opt
-     * @returns {Promise<Array>}
+     * @param {{ limit?: number, skip?: number }} [opt]
+     * @returns {Promise<{ total: number, profiles: Array }>}
      */
-    async search(query, opt = { limit: 20, skip: 0 }) {
-        if (!query || query.trim().length < 2) {
-            throw ApiError.BadRequest('search query too short', 'ERR_SEARCH_SHORT', query);
+    async search(query, opt = {}) {
+        const q = (query ?? '').trim();
+        if (!q) {
+            throw ApiError.BadRequest('search query is empty', 'ERR_SEARCH_Q_EMPTY', null);
         }
 
-        return ProfileRepo.model.find({
-            username: { $regex: `^${query.trim()}`, $options: 'i' },
-            isComplete: true
-        })
-            .select('username avatar status last_online')
-            .limit(opt.limit)
-            .skip(opt.skip)
-            .lean();
+        let limit = Number(opt.limit ?? 20);
+        let skip = Number(opt.skip ?? 0);
+
+        if (!Number.isFinite(limit) || limit <= 0) limit = 20;
+        if (!Number.isFinite(skip) || skip < 0) skip = 0;
+        if (limit > 100) limit = 100;
+
+        const result = await es.search({
+            index: IDX_PROFILES,
+            from: skip,
+            size: limit,
+            query: {
+                bool: {
+                    should: [
+                        { term: { 'username.raw': q.toLowerCase() } },
+                        { prefix: { 'username.raw': q.toLowerCase() } },
+                        {
+                            match: {
+                                username: {
+                                    query: q,
+                                    fuzziness: 'AUTO',
+                                },
+                            },
+                        },
+                    ],
+                    minimum_should_match: 1,
+                },
+            },
+            sort: [
+                { _score: 'desc' },
+                { updatedAt: 'desc' },
+            ],
+        });
+
+        const profiles = (result.hits?.hits ?? []).map((hit) => ({
+            _id: hit._id,
+            ...hit._source,
+            _score: hit._score,
+        }));
+
+        return {
+            total: result.hits?.total?.value ?? 0,
+            profiles,
+        };
     }
 
     /**

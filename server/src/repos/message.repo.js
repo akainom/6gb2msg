@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Base = require('./base.repo');
 const Message = require('../models/messages');
 const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const { mapMessage } = require('../search/es.mapper');
 
 class MessageRepo extends Base {
     constructor() {
@@ -36,7 +38,15 @@ class MessageRepo extends Base {
             throw ApiError.BadRequest('message must have content or attachments', 'ERR_MSG_EMPTY', null);
         }
 
-        return this.create({ chat_id, sender_id, content, attachments }, session);
+        const msg = await this.create({ chat_id, sender_id, content, attachments }, session);
+
+        es.index({
+            index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+            id: String(msg._id),
+            document: mapMessage(msg)
+        }).catch(e => console.error('[ES] Message sync error:', e.message));
+
+        return msg;
     }
 
     /**
@@ -47,7 +57,7 @@ class MessageRepo extends Base {
      * @returns {Promise<Object>} forwarded message
      */
     async forwardMessage(chatId, message, fromId, session = null) {
-        return this.create({
+        const msg = await this.create({
             chat_id: chatId,
             sender_id: fromId,
             content: message.content,
@@ -55,6 +65,14 @@ class MessageRepo extends Base {
             is_forwarded: true,
             forwarded_by: fromId,
         }, session);
+
+        es.index({
+            index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+            id: String(msg._id),
+            document: mapMessage(msg)
+        }).catch(e => console.error('[ES] Message sync error:', e.message));
+
+        return msg;
     }
 
     /**
@@ -126,7 +144,22 @@ class MessageRepo extends Base {
      * @returns {Promise<Object>} deleted message
      */
     async deleteMessage(messageId, session = null) {
-        return this.model.findByIdAndDelete(messageId, { session }).lean();
+        const msg = await this.model.findByIdAndDelete(messageId, { session }).lean();
+        
+        if (msg) {
+            try {
+                await es.delete({
+                    index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+                    id: String(messageId)
+                });
+            } catch (e) {
+                if (e?.meta?.statusCode !== 404) {
+                    console.error('[ES] Message delete error:', e.message);
+                }
+            }
+        }
+        
+        return msg;
     }
 
     /**
@@ -135,7 +168,22 @@ class MessageRepo extends Base {
      * @returns {Promise<number>} deleted count
      */
     async deleteByChatId(chatId, session = null) {
+        const messages = await this.model.find({ chat_id: chatId }).select('_id').lean();
         const result = await this.model.deleteMany({ chat_id: chatId }, { session });
+        
+        for (const msg of messages) {
+            try {
+                await es.delete({
+                    index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+                    id: String(msg._id)
+                });
+            } catch (e) {
+                if (e?.meta?.statusCode !== 404) {
+                    console.error('[ES] Message delete error:', e.message);
+                }
+            }
+        }
+        
         return result.deletedCount;
     }
 

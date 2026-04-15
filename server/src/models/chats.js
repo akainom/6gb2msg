@@ -62,4 +62,6 @@ ChatSchema.index(
     { unique: false }
 );
 
-module.exports = mongoose.model('Chat', ChatSchema);
+const Chat = mongoose.model('Chat', ChatSchema);
+
+module.exports = Chat;

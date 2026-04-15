@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Base = require('./base.repo');
 const Chat = require('../models/chats');
 const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const { mapChat } = require('../search/es.mapper');
 
 class ChatRepo extends Base {
     constructor() {
@@ -49,13 +51,21 @@ class ChatRepo extends Base {
             throw ApiError.BadRequest('private chat already exists', 'ERR_CHAT_EX', { userIdA, userIdB });
         }
 
-        return this.create({
+        const chat = await this.create({
             type: 'private',
             participants: [
                 { user_id: userIdA, role: 'member' },
                 { user_id: userIdB, role: 'member' }
             ]
         }, session);
+
+        es.index({
+            index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
+            id: String(chat._id),
+            document: mapChat(chat)
+        }).catch(e => console.error('[ES] Chat sync error:', e.message));
+
+        return chat;
     }
 
     /**
@@ -76,7 +86,15 @@ class ChatRepo extends Base {
             ...memberIds.map(id => ({ user_id: id, role: 'member' }))
         ];
 
-        return this.create({ type: 'group', title: title.trim(), avatar, participants }, session);
+        const chat = await this.create({ type: 'group', title: title.trim(), avatar, participants }, session);
+
+        es.index({
+            index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
+            id: String(chat._id),
+            document: mapChat(chat)
+        }).catch(e => console.error('[ES] Chat sync error:', e.message));
+
+        return chat;
     }
 
     /**
@@ -169,6 +187,18 @@ class ChatRepo extends Base {
      */
     async deleteChat(chatId, session = null) {
         await this.model.findByIdAndDelete(chatId, { session });
+        
+        try {
+            await es.delete({
+                index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
+                id: String(chatId)
+            });
+        } catch (e) {
+            if (e?.meta?.statusCode !== 404) {
+                console.error('[ES] Chat delete error:', e.message);
+            }
+        }
+        
         return chatId;
     }
 

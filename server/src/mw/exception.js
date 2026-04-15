@@ -45,7 +45,7 @@ class ApiError extends Error {
 /* @param {ApiError|Error} err
 /*/
 const ApiErrorMiddlewareFunction = function (err, req, res, next) {
-    console.error(`[FATAL]: ${err.message}`);
+    console.error(`[FATAL]: ${err.message}\n${err.stack}`);
     if (err instanceof ApiError) {
         return res.status(err.status).json({
             status: 'error',

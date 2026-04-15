@@ -4,7 +4,9 @@ const Profile = require('../models/profile');
 const User = require('../models/user');
 const userRepo = require('./user.repo');
 const { als } = require('../mw/als');
-const { ApiError } = require('../mw/exception')
+const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const { mapProfile } = require('../search/es.mapper');
 
 class ProfileDTO {
     constructor(data) {
@@ -20,7 +22,7 @@ class ProfileDTO {
         this.user.createdAt = new Date();
 
         this.username = data.username ?? '';
-        this.avatar = data.avatar ?? '';
+        this.avatar = '';
         this.bio = data.bio ?? '';
         this.location = data.location ?? '';
         this.status = data.status ?? '';
@@ -59,6 +61,18 @@ class ProfileRepo extends Base {
             await this.model.findByIdAndDelete(profileid, { session: session });
             
             await session.commitTransaction();
+            
+            try {
+                await es.delete({
+                    index: process.env.ELASTIC_INDEX_PROFILES || 'profiles_v1',
+                    id: String(profileid)
+                });
+            } catch (e) {
+                if (e?.meta?.statusCode !== 404) {
+                    console.error('[ES] Profile delete error:', e.message);
+                }
+            }
+            
             return profileid;
         }
         catch (e) {
@@ -130,6 +144,14 @@ class ProfileRepo extends Base {
             last_online: dto.last_online,
             isComplete: dto.isComplete
         }], { session });
+
+        if (dto.isComplete === true) {
+            es.index({
+                index: process.env.ELASTIC_INDEX_PROFILES || 'profiles_v1',
+                id: String(profile._id),
+                document: mapProfile(profile.toObject())
+            }).catch(e => console.error('[ES] Profile sync error:', e.message));
+        }
 
         return profile;
     }

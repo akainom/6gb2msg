@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const chatRepo = require('../repos/chat.repo');
 const messageRepo = require('../repos/message.repo');
 const { ApiError } = require('../mw/exception');
+const es = require('../search/es.client');
+const IDX_CHATS = process.env.ELASTIC_INDEX_CHATS || 'chats_v1';
 
 class ChatService {
     /**
@@ -11,6 +13,33 @@ class ChatService {
      */
     async listForUser(userId, opt = { limit: 20, skip: 0 }) {
         return await chatRepo.getByUserId(userId, opt);
+    }
+
+    async search(query, opt = {}) {
+        const q = (query ?? '').trim();
+        if (!q) {
+            throw ApiError.BadRequest('search query is empty', 'ERR_SEARCH_Q_EMPTY');
+        }
+
+        const limit = Number(opt.limit ?? 20);
+        const skip = Number(opt.skip ?? 0);
+
+        if (limit > 100) limit = 100;
+        if (skip < 0) skip = 0;
+
+        const result = await es.search({
+            index: IDX_CHATS,
+            from: skip,
+            size: limit,
+            query: {
+                match: { title: { query: q, fuzziness: 'AUTO' } }
+            },
+        });
+
+        return {
+            total: result.hits?.total?.value ?? 0,
+            chats: result.hits?.hits?.map(hit => ({ _id: hit._id, ...hit._source })) ?? [],
+        };
     }
 
     /**

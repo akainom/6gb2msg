@@ -1,0 +1,1 @@
+@elastic/elasticsearch axios bcryptjs cookie-parser dotenv express form-data jsonwebtoken mongoose multer passport passport-google-oauth20 sharp socket.io socket.io-client validator

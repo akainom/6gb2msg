@@ -44,7 +44,7 @@ class ChatController {
     async createPrivate(req, res, next) {
         try {
             const userId = req.headers['x-user-id'];
-            const { peerId } = req.body;
+            const { peerId } = req.body ?? {}
 
             if (!peerId) {
                 throw ApiError.BadRequest('peerId required', 'ERR_FIELDS_MISSING', null);
@@ -65,7 +65,7 @@ class ChatController {
     async createGroup(req, res, next) {
         try {
             const userId = req.headers['x-user-id'];
-            const { title, memberIds = [], avatar = null } = req.body;
+            const { title, memberIds = [], avatar = null } = req.body ?? {}
 
             if (!title) {
                 throw ApiError.BadRequest('title required', 'ERR_FIELDS_MISSING', null);
@@ -87,7 +87,7 @@ class ChatController {
         try {
             const actorId = req.headers['x-user-id'];
             const { chatId } = req.params;
-            const { userId } = req.body;
+            const { userId } = req.body ?? {}
 
             if (!userId) {
                 throw ApiError.BadRequest('userId required', 'ERR_FIELDS_MISSING', null);
@@ -125,7 +125,7 @@ class ChatController {
         try {
             const actorId = req.headers['x-user-id'];
             const { chatId } = req.params;
-            const { title, avatar } = req.body;
+            const { title, avatar } = req.body ?? {}
 
             if (!title && !avatar) {
                 throw ApiError.BadRequest('nothing to update', 'ERR_FIELDS_MISSING', null);

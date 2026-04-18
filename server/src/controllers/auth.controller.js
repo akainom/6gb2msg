@@ -57,7 +57,7 @@ class AuthController {
      */
     async register(req, res, next) {
         try {
-            const { email, password, username } = req.body;
+            const { email, password, username } = req.body ?? {}
 
             if (!validateEmail(email) || !validatePassword(password) || !validateUsername(username)) {
                 throw ApiError.BadRequest('invalid fields', 'ERR_FIELDS_INV', { email, password, username });
@@ -87,7 +87,7 @@ class AuthController {
      */
     async login(req, res, next) {
         try {
-            const { username, password } = req.body;
+            const { username, password } = req.body ?? {}
 
             if (!username || !password) {
                 throw ApiError.BadRequest('missing required fields', 'ERR_FIELDS_MISSING', { username });
@@ -214,7 +214,7 @@ class AuthController {
     async completeOAuthProfile(req, res, next) {
         try {
             const userid = req.headers['x-user-id'] ?? req.body.userid;
-            const { username, bio, location, avatar } = req.body;
+            const { username, bio, location, avatar } = req.body ?? {}
 
             if (!userid || !username) {
                 throw ApiError.BadRequest('missing required fields', 'ERR_FIELDS_MISSING', { userid, username });

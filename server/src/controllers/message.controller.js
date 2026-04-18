@@ -30,7 +30,7 @@ class MessageController {
         try {
             const userId = req.headers['x-user-id'];
             const { chatId } = req.params;
-            const { content, attachments } = req.body;
+            const { content, attachments } = req.body ?? {}
 
             if (!content && (!attachments || attachments.length === 0)) {
                 throw ApiError.BadRequest('content or attachments required', 'ERR_MSG_EMPTY', null);
@@ -52,7 +52,7 @@ class MessageController {
         try {
             const userId = req.headers['x-user-id'];
             const { messageId } = req.params;
-            const { content } = req.body;
+            const { content } = req.body ?? {}
 
             if (!content) {
                 throw ApiError.BadRequest('content required', 'ERR_FIELDS_MISSING', null);
@@ -90,7 +90,7 @@ class MessageController {
         try {
             const userId = req.headers['x-user-id'];
             const { messageId } = req.params;
-            const { targetChatId } = req.body;
+            const { targetChatId } = req.body ?? {}
 
             if (!targetChatId) {
                 throw ApiError.BadRequest('targetChatId required', 'ERR_FIELDS_MISSING', null);

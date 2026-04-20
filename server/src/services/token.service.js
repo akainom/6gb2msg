@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const UserRepo = require('../repos/user.repo');
 const { ApiError } = require('../mw/exception'); 
+const Encryptor = require('./enc.service');
 
 
 const REFRESH_EXPIRES_SECONDS = 15 * 24 * 60 * 60;
@@ -14,9 +15,9 @@ class TokenService {
      * @param {string|number} [expiresIn='30m'] 
      * @returns {string} JWT access token
      */
-    genAccesToken(userid, expiresIn = null) {
+    genAccesToken(userid, expiresIn = null, fprint) {
         return jwt.sign(
-            { userid },
+            { userid, fprint },
             JWT_ACCESS_SECRET,
             { expiresIn: expiresIn ?? '30m' }
         );
@@ -24,7 +25,7 @@ class TokenService {
 
     /**
      * @param {string} accessToken
-     * @returns {{ userid: string }} decoded payload
+     * @returns {{ userid: string, fprint: string }} decoded payload
      */
     verifyAccessToken(accessToken) {
         try {

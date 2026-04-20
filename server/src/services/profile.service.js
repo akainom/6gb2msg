@@ -168,7 +168,6 @@ class ProfileService {
             throw ApiError.NotFound('user not found', 'ERR_USR_NF', userId);
         }
 
-        // local auth users must confirm with password
         if (user.authProvider === 'local' || !user.authProvider) {
             const bcrypt = require('bcryptjs');
             const correct = await bcrypt.compare(password, user.password);
@@ -181,6 +180,7 @@ class ProfileService {
         if (!profile) {
             throw ApiError.NotFound('profile not found', 'ERR_PROF_NF', userId);
         }
+
 
         await ProfileRepo.deleteProfileWithUser(profile._id);
     }

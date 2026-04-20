@@ -10,21 +10,35 @@ const REFRESH_COOKIE_OPTIONS = {
     maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days in ms
 };
 
+const FPRINT_COOKIE_NAME = 'fprint';
+const FPRINT_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 15 * 24 * 60 * 60 * 1000,
+};
+
 /**
- * @description sets refreshToken as HttpOnly cookie and returns accessToken in body
+ * @description sets refreshToken, fprint as HttpOnly + Secure and returns accessToken in body
  */
-function sendTokens(res, accessToken, refreshToken) {
+function sendTokens(res, accessToken, refreshToken, fprint) {
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
+    res.cookie(FPRINT_COOKIE_NAME, fprint, FPRINT_COOKIE_OPTIONS);
     return { accessToken };
 }
 
 /**
- * @description clears refreshToken cookie
+ * @description clears refreshToken and fprint cookies
  */
 function clearRefreshCookie(res) {
     res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+    });
+    res.clearCookie(FPRINT_COOKIE_NAME, {
+        httpOnly: true,
+        secure: true,
         sameSite: 'strict',
     });
 }
@@ -64,9 +78,9 @@ class AuthController {
             }
 
             const dto = new regDTO(email, password, username, 'local');
-            const { profile, user, accessToken, refreshToken } = await AuthService.registerUser(dto);
+            const { profile, user, accessToken, refreshToken, fprint } = await AuthService.registerUser(dto);
 
-            const tokens = sendTokens(res, accessToken, refreshToken);
+            const tokens = sendTokens(res, accessToken, refreshToken, fprint);
 
             return res.status(201).json({
                 status: 'ok',
@@ -94,9 +108,9 @@ class AuthController {
             }
 
             const dto = new loginDTO(username, password);
-            const { accessToken, refreshToken, ...rest } = await AuthService.login(dto);
+            const { accessToken, refreshToken, fprint, ...rest } = await AuthService.login(dto);
 
-            const tokens = sendTokens(res, accessToken, refreshToken);
+            const tokens = sendTokens(res, accessToken, refreshToken, fprint);
 
             return res.status(200).json({
                 status: 'ok',
@@ -167,7 +181,7 @@ class AuthController {
                 throw ApiError.Forbidden('refresh token invalid or expired', 'ERR_REFR_INV', null);
             }
 
-            const tokens = sendTokens(res, result.accessToken, result.refreshToken);
+            const tokens = sendTokens(res, result.accessToken, result.refreshToken, result.fprint);
 
             return res.status(200).json({
                 status: 'ok',

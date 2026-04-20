@@ -1,7 +1,25 @@
 const ChatService = require('../services/chat.service');
 const { ApiError } = require('../mw/exception');
+const { getUserId } = require('../mw/request');
 
 class ChatController {
+
+    /**
+     * GET /chats/search?q=...&limit=...&skip=...
+     */
+    async search(req, res, next) {
+        try {
+            const { q } = req.query;
+            const limit = parseInt(req.query.limit) || 20;
+            const skip = parseInt(req.query.skip) || 0;
+
+            const result = await ChatService.search(q, { limit, skip });
+
+            return res.status(200).json({ status: 'ok', data: result });
+        } catch (e) {
+            next(e);
+        }
+    }
 
     /**
      * GET /chats
@@ -9,7 +27,7 @@ class ChatController {
      */
     async list(req, res, next) {
         try {
-            const userId = req.headers['x-user-id'];
+            const userId = getUserId(req);
             const limit = parseInt(req.query.limit) || 20;
             const skip = parseInt(req.query.skip) || 0;
 
@@ -26,7 +44,7 @@ class ChatController {
      */
     async getOne(req, res, next) {
         try {
-            const userId = req.headers['x-user-id'];
+            const userId = getUserId(req);
             const { chatId } = req.params;
 
             const chat = await ChatService.getForUser(userId, chatId);
@@ -43,7 +61,7 @@ class ChatController {
      */
     async createPrivate(req, res, next) {
         try {
-            const userId = req.headers['x-user-id'];
+            const userId = getUserId(req);
             const { peerId } = req.body ?? {}
 
             if (!peerId) {
@@ -64,7 +82,7 @@ class ChatController {
      */
     async createGroup(req, res, next) {
         try {
-            const userId = req.headers['x-user-id'];
+            const userId = getUserId(req);
             const { title, memberIds = [], avatar = null } = req.body ?? {}
 
             if (!title) {
@@ -85,7 +103,7 @@ class ChatController {
      */
     async addMember(req, res, next) {
         try {
-            const actorId = req.headers['x-user-id'];
+            const actorId = getUserId(req);
             const { chatId } = req.params;
             const { userId } = req.body ?? {}
 
@@ -106,7 +124,7 @@ class ChatController {
      */
     async removeMember(req, res, next) {
         try {
-            const actorId = req.headers['x-user-id'];
+            const actorId = getUserId(req);
             const { chatId, userId } = req.params;
 
             const chat = await ChatService.removeMember(actorId, chatId, userId);
@@ -123,7 +141,7 @@ class ChatController {
      */
     async updateGroupMeta(req, res, next) {
         try {
-            const actorId = req.headers['x-user-id'];
+            const actorId = getUserId(req);
             const { chatId } = req.params;
             const { title, avatar } = req.body ?? {}
 
@@ -144,7 +162,7 @@ class ChatController {
      */
     async deleteChat(req, res, next) {
         try {
-            const userId = req.headers['x-user-id'];
+            const userId = getUserId(req);
             const { chatId } = req.params;
 
             await ChatService.deleteChat(userId, chatId);

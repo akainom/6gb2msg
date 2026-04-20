@@ -119,15 +119,35 @@ class MessageService {
      */
     async deleteMessage(userId, messageId) {
         const msg = await messageRepo.getById(messageId);
-        if (!msg) {
-            throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
-        }
+        if (!msg) throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
+        
         await this._requireParticipant(msg.chat_id, userId);
         const sender = await messageRepo.isSender(messageId, userId);
-        if (!sender) {
-            throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
+        if (!sender) throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
+
+        const chat = await chatRepo.getById(msg.chat_id);
+        const isLast = chat.last_message?.message_id == messageId;
+
+        const deleted = await messageRepo.deleteMessage(messageId);
+
+        if (isLast) {
+            const newLast = await messageRepo.model
+                .findOne({ chat_id: msg.chat_id })
+                .sort({ createdAt: -1 })
+                .lean();
+
+            await chatRepo.updateLastMessage(msg.chat_id, newLast ? {
+                message_id: newLast._id,
+                text: previewText(newLast.content),
+                sent_at: newLast.createdAt,
+            } : {
+                message_id: null,
+                text: null,
+                sent_at: null,
+            });
         }
-        return messageRepo.deleteMessage(messageId);
+
+        return deleted;
     }
 
     /**

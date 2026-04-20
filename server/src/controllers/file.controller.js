@@ -5,13 +5,14 @@ const ProfileService = require('../services/profile.service');
 const ChatService = require('../services/chat.service');
 const MessageService = require('../services/message.service');
 const { ApiError } = require('../mw/exception');
+const { getUserId } = require('../mw/request');
 
 const AVATAR_BASE = process.env.PROFILE_AVATAR_DIR;
 const ATTACHMENT_BASE = process.env.MESSAGE_ATTACHMENT_DIR;
 
 async function uploadAvatar(req, res, next) {
     try {
-        const userId = req.headers['x-user-id'];
+        const userId = getUserId(req);
         const profile = await ProfileService.getByUserId(userId);
         
         if (!req.file) {
@@ -34,7 +35,7 @@ async function uploadAvatar(req, res, next) {
 
 async function uploadAttachment(req, res, next) {
     try {
-        const userId = req.headers['x-user-id'];
+        const userId = getUserId(req);
         const { chatId } = req.params;
         const content = req.body.content || '';
         
@@ -94,7 +95,7 @@ async function getAvatar(req, res, next) {
 
 async function getAttachment(req, res, next) {
     try {
-        const userId = req.headers['x-user-id'];
+        const userId = getUserId(req);
         const { chatId, filepath } = req.params;
         
         await ChatService.getForUser(userId, chatId);

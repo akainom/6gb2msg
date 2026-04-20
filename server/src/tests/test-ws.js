@@ -1,9 +1,10 @@
-const { io } = require('socket.io-client');
 const dotenv = require('dotenv');
+const { io } = require('socket.io-client');
 dotenv.config({ path: __dirname + '/server.test.env' });
+const connect = require('../db/connect');
 const { ProfileRepo } = require('../repos/profile.repo');
 
-const BASE_URL = 'http://127.0.0.1:3000';
+const BASE_URL = 'https://192.168.100.8:443';
 const createdProfileIds = [];
 
 function log(label, obj) {
@@ -21,7 +22,7 @@ async function post(path, body, headers = {}) {
 }
 
 async function registerUser(email, username, password) {
-    const res = await post('/auth/register', { email, username, password });
+    const res = await post('/auth/register', { email, username, password }, );
     const userId = res.data?.user_id;
     const token = res.data?.accessToken;
     if (userId) {
@@ -32,6 +33,9 @@ async function registerUser(email, username, password) {
 
 async function cleanup() {
     console.log('\n========== CLEANUP ==========');
+    await connect();
+    console.log('DB connected');
+
     for (const profileId of createdProfileIds.reverse()) {
         try {
             await ProfileRepo.deleteProfileWithUser(profileId);
@@ -73,16 +77,19 @@ function sleep(ms) {
         process.exit(1);
     }
 
-    const ownerSocket = io(BASE_URL, {
+    const WS_URL = 'wss://192.168.100.8'
+    const ownerSocket = io(WS_URL, {
         path: '/ws',
         auth: { token: user1.token },
         transports: ['websocket'],
+        rejectUnauthorized: false
     });
 
-    const peerSocket = io(BASE_URL, {
+    const peerSocket = io(WS_URL, {
         path: '/ws',
         auth: { token: user2.token },
         transports: ['websocket'],
+        rejectUnauthorized: false
     });
 
     let ownerConnected = false;
@@ -147,8 +154,7 @@ function sleep(ms) {
     });
 
     ownerSocket.on('connect_error', (e) => {
-        console.error('owner connect_error:', e.message);
-        cleanupAndExit();
+        console.error('owner connect_error:', e.message, e.description, e.context);
     });
 
     function cleanupAndExit() {

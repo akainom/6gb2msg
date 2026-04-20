@@ -1,12 +1,11 @@
 const { ProfileRepo, ProfileDTO } = require('../repos/profile.repo');
-const bcrypt = require('bcryptjs');
 const { als } = require('../mw/als');
 const { ApiError } = require('../mw/exception'); 
 const TokenService = require('./token.service');
 const UserRepo = require('../repos/user.repo');
 const mongoose = require('mongoose');
 const profileRepo = require('../repos/profile.repo');
-const crypto = require('crypto');
+const Encryptor = require('./enc.service');
 
 class loginDTO {
     /**
@@ -49,34 +48,6 @@ class regDTO {
     }
 }
 
-class Encryptor {
-    /**
-     * @description encrypts sensitive DTO fields before storage
-     * @param {regDTO} dto 
-     * @returns {Promise<Object>} DTO with hashed password
-     */
-
-    static hashEmail(email) {
-        return crypto.createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
-    }
-
-    static async encryptDTODefault(dto) {
-        return {
-            ...dto,
-            password: dto.password ? await bcrypt.hash(dto.password, 10) : null,
-            emailHash: Encryptor.hashEmail(dto.email)
-        }
-    }
-
-    static async comparePasswords(password, hash) {
-        return await bcrypt.compare(password, hash);
-    }
-
-    static genRandomizedString() {
-        return `${Math.ceil(Math.random() * 10**9)}`;
-    } 
-}
-
 class AuthService {
     /**
      * @description generates full token pair and saves refresh token to storage
@@ -84,15 +55,17 @@ class AuthService {
      * @returns {Promise<Object>} accessToken and refreshToken
      */
     async genTokens(userid) {
-        const accessToken = TokenService.genAccesToken(userid);
+        const { fprint, claim } = Encryptor.getFprint();
+
+        const accessToken = TokenService.genAccesToken(userid, null, claim); 
         let refreshToken = await UserRepo.getFreshToken(userid);
 
         if (!refreshToken) {
             refreshToken = TokenService.genRefreshToken(userid);
             await TokenService.saveRefreshToken(userid, refreshToken);
-        } 
+        }
 
-        return { accessToken, refreshToken };
+        return { accessToken, refreshToken, fprint }; 
     }
 
     /**
@@ -162,16 +135,9 @@ class AuthService {
 
         const {newProfile, newUser} = await ProfileRepo.createWithUser(profileDTO);
 
-        /* NO STORE IN DEBUG
-           idc somewhere else store is called
-        const store = als.getStore();
-        store.set('user', newUser);
-        store.set('profile', profile);
-        */
+        const {accessToken, refreshToken, fprint} = await this.genTokens(newUser._id);
 
-        const {accessToken, refreshToken} = await this.genTokens(newUser._id);
-
-        return {profile: newProfile, user: newUser, accessToken, refreshToken};
+        return {profile: newProfile, user: newUser, accessToken, refreshToken, fprint};
     }
 
     /**

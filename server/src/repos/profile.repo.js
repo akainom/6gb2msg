@@ -3,7 +3,6 @@ const Base = require('./base.repo');
 const Profile = require('../models/profile');
 const User = require('../models/user');
 const userRepo = require('./user.repo');
-const { als } = require('../mw/als');
 const { ApiError } = require('../mw/exception');
 const es = require('../search/es.client');
 const { mapProfile } = require('../search/es.mapper');
@@ -163,12 +162,10 @@ class ProfileRepo extends Base {
      * @returns related user
      */
     async getUser(profileid, session = null) {
-        const store = als.getStore();
-
-        const profile = store?.get('profile') ?? await this.getById(profileid).session(session);
+        const profile = await this.getById(profileid, session);
         if (!profile) {
             return null;
-        } 
+        }
 
         const user = await profile.getUser(session);
         if (!user) {

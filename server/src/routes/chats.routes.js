@@ -3,6 +3,9 @@ const router = express.Router();
 const ChatController = require('../controllers/chats.controller');
 const MessageController = require('../controllers/message.controller');
 
+// GET /chats/search?q=...&limit=...&skip=...
+router.get('/search', ChatController.search.bind(ChatController));
+
 // GET /chats
 router.get('/', ChatController.list.bind(ChatController));
 
@@ -27,7 +30,10 @@ router.post('/:chatId/members', ChatController.addMember.bind(ChatController));
 // DELETE /chats/:chatid/members/userid
 router.delete('/:chatId/members/:userId', ChatController.removeMember.bind(ChatController));
 
-// NOTE: static segments (/unread, /read) must come before /:messageId
+// NOTE: static segments (/unread, /read, /search) must come before /:messageId
+
+// GET /chats/:chatid/messages/search?q=...
+router.get('/:chatId/messages/search', MessageController.searchInChat.bind(MessageController));
 
 // GET /chats/:chatid/messages
 router.get('/:chatId/messages', MessageController.list.bind(MessageController));

@@ -5,17 +5,13 @@ const { ApiError } = require('../mw/exception');
 const es = require('../search/es.client');
 const { mapChat } = require('../search/es.mapper');
 
+const IDX_CHATS = process.env.ELASTIC_INDEX_CHATS || 'chats_v1';
+
 class ChatRepo extends Base {
     constructor() {
         super(Chat);
     }
 
-    /**
-     * @description returns all chats where user is a participant sorted by last message time desc
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {{ limit: number, skip: number }} opt
-     * @returns {Promise<Array>}
-     */
     async getByUserId(userId, opt = { limit: 20, skip: 0 }) {
         return this.model.find({ 'participants.user_id': userId })
             .sort({ 'last_message.sent_at': -1, createdAt: -1 })
@@ -24,12 +20,6 @@ class ChatRepo extends Base {
             .lean();
     }
 
-    /**
-     * @description finds private chat between two users
-     * @param {mongoose.Types.ObjectId} userIdA
-     * @param {mongoose.Types.ObjectId} userIdB
-     * @returns {Promise<Object>}
-     */
     async getPrivate(userIdA, userIdB) {
         return this.model.findOne({
             type: 'private',
@@ -38,13 +28,6 @@ class ChatRepo extends Base {
         }).lean();
     }
 
-    /**
-     * @description creates a private chat between two users.
-     * @param {mongoose.Types.ObjectId} userIdA
-     * @param {mongoose.Types.ObjectId} userIdB
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} created chat
-     */
     async createPrivate(userIdA, userIdB, session = null) {
         const existing = await this.getPrivate(userIdA, userIdB);
         if (existing) {
@@ -53,29 +36,27 @@ class ChatRepo extends Base {
 
         const chat = await this.create({
             type: 'private',
+            title: 'Private',
             participants: [
                 { user_id: userIdA, role: 'member' },
                 { user_id: userIdB, role: 'member' }
             ]
         }, session);
 
-        es.index({
-            index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
-            id: String(chat._id),
-            document: mapChat(chat)
-        }).catch(e => console.error('[ES] Chat sync error:', e.message));
+        try {
+            await es.index({
+                index: IDX_CHATS,
+                id: String(chat._id),
+                document: mapChat(chat)
+            });
+            console.log('[ES] Private chat indexed:', chat._id);
+        } catch (e) {
+            console.error('[ES] Chat index error:', e.message);
+        }
 
         return chat;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} ownerId
-     * @param {string} title
-     * @param {mongoose.Types.ObjectId[]} memberIds does NOT include owner
-     * @param {string} avatar
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} created chat
-     */
     async createGroup(ownerId, title, memberIds = [], avatar = null, session = null) {
         if (!title?.trim()) {
             throw ApiError.BadRequest('group title required', 'ERR_CHAT_TITLE', null);
@@ -88,21 +69,20 @@ class ChatRepo extends Base {
 
         const chat = await this.create({ type: 'group', title: title.trim(), avatar, participants }, session);
 
-        es.index({
-            index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
-            id: String(chat._id),
-            document: mapChat(chat)
-        }).catch(e => console.error('[ES] Chat sync error:', e.message));
+        try {
+            await es.index({
+                index: IDX_CHATS,
+                id: String(chat._id),
+                document: mapChat(chat)
+            });
+            console.log('[ES] Group chat indexed:', chat._id, chat.title);
+        } catch (e) {
+            console.error('[ES] Chat index error:', e.message);
+        }
 
         return chat;
     }
 
-    /**
-     * @description checks if user is a participant of the chat
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.Types.ObjectId} userId
-     * @returns {Promise<boolean>}
-     */
     async isParticipant(chatId, userId) {
         const chat = await this.model.findOne({
             _id: chatId,
@@ -112,12 +92,6 @@ class ChatRepo extends Base {
         return !!chat;
     }
 
-    /**
-     * @description returns the role of a user in a chat
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.Types.ObjectId} userId
-     * @returns {Promise<'owner'|'member'>} null if not a participant
-     */
     async getRole(chatId, userId) {
         const chat = await this.model.findOne({
             _id: chatId,
@@ -129,13 +103,6 @@ class ChatRepo extends Base {
         return p ? p.role : null;
     }
 
-    /**
-     * @description adds a member to a group chat.
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} updated chat
-     */
     async addMember(chatId, userId, session = null) {
         const alreadyIn = await this.isParticipant(chatId, userId);
         if (alreadyIn) {
@@ -149,13 +116,6 @@ class ChatRepo extends Base {
         ).lean();
     }
 
-    /**
-     * @description removes a member from a group chat.
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} updated chat
-     */
     async removeMember(chatId, userId, session = null) {
         return this.model.findByIdAndUpdate(
             chatId,
@@ -164,37 +124,38 @@ class ChatRepo extends Base {
         ).lean();
     }
 
-    /**
-     * @description updates last_message preview on the chat document.
-     * @param {mongoose.Types.ObjectId|string} chatId
-     * @param {{ message_id, text, sent_at }} preview
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<void>}
-     */
     async updateLastMessage(chatId, preview, session = null) {
         await this.model.findByIdAndUpdate(
             chatId,
             { $set: { last_message: preview } },
             { session }
         );
+        
+        const chat = await this.getById(chatId);
+        if (chat) {
+            try {
+                await es.index({
+                    index: IDX_CHATS,
+                    id: String(chatId),
+                    document: mapChat(chat)
+                });
+                console.log('[ES] Chat last_message updated:', chatId);
+            } catch (e) {
+                console.error('[ES] Chat last_message sync error:', e.message);
+            }
+        }
     }
 
-    /**
-     * @description deletes a chat and returns its id.
-     * @param {mongoose.Types.ObjectId|string} chatId
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<mongoose.Types.ObjectId>}
-     */
     async deleteChat(chatId, session = null) {
         await this.model.findByIdAndDelete(chatId, { session });
         
         try {
             await es.delete({
-                index: process.env.ELASTIC_INDEX_CHATS || 'chats_v1',
+                index: IDX_CHATS,
                 id: String(chatId)
             });
         } catch (e) {
-            if (e?.meta?.statusCode !== 404) {
+            if (e.meta?.statusCode !== 404) {
                 console.error('[ES] Chat delete error:', e.message);
             }
         }
@@ -202,13 +163,6 @@ class ChatRepo extends Base {
         return chatId;
     }
 
-    /**
-     * @description updates group title or avatar. only group chats.
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {{ title?: string, avatar?: string }} data
-     * @param {mongoose.ClientSession} session 
-     * @returns {Promise<Object>} updated chat
-     */
     async updateGroupMeta(chatId, data, session) {
         const $set = {};
         if (data.title) $set.title = data.title.trim();

@@ -1,49 +1,16 @@
 const dotenv = require('dotenv');
-const { io } = require('socket.io-client');
 dotenv.config({ path: __dirname + '/server.test.env' });
-const connect = require('../db/connect');
-const { ProfileRepo } = require('../repos/profile.repo');
+const { register, login } = require('./auth.tests');
+const { io } = require('socket.io-client');
 
-const BASE_URL = 'https://192.168.100.8:443';
-const createdProfileIds = [];
+const BASE_URL = process.env.BASE_URL;
+const WS_URL = process.env.WS_URL;
+
+const createdUsers = [];
 
 function log(label, obj) {
     console.log(`\n========== ${label} ==========`);
     if (obj !== undefined) console.log(JSON.stringify(obj, null, 2));
-}
-
-async function post(path, body, headers = {}) {
-    const res = await fetch(`${BASE_URL}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(body),
-    });
-    return res.json();
-}
-
-async function registerUser(email, username, password) {
-    const res = await post('/auth/register', { email, username, password }, );
-    const userId = res.data?.user_id;
-    const token = res.data?.accessToken;
-    if (userId) {
-        createdProfileIds.push(userId);
-    }
-    return { userId, token };
-}
-
-async function cleanup() {
-    console.log('\n========== CLEANUP ==========');
-    await connect();
-    console.log('DB connected');
-
-    for (const profileId of createdProfileIds.reverse()) {
-        try {
-            await ProfileRepo.deleteProfileWithUser(profileId);
-            console.log('Deleted profile:', profileId);
-        } catch (e) {
-            console.log('Cleanup error:', e.message);
-        }
-    }
 }
 
 function sleep(ms) {
@@ -51,43 +18,58 @@ function sleep(ms) {
 }
 
 (async () => {
-    console.log('\n========== SETUP: register 2 users ==========');
-    const ts = Date.now();
-    
-    const user1 = await registerUser(`user1_${ts}@test.com`, `user1_${ts}`.slice(0, 15), 'TestPass123');
-    console.log('User1 registered:', user1.userId);
-    
-    const user2 = await registerUser(`user2_${ts}@test.com`, `user2_${ts}`.slice(0, 15), 'TestPass123');
-    console.log('User2 registered:', user2.userId);
+    const ts = Math.ceil(Math.random() * 10**6);
 
-    if (!user1.userId || !user2.userId) {
+    console.log('\n========== REGISTER 2 USERS ==========');
+    const user1 = await register(`user1_${ts}`, `user1_${ts}@test.com`, 'TestPass123');
+    log('user1', user1);
+    
+    const user2 = await register(`user2_${ts}`, `user2_${ts}@test.com`, 'TestPass123');
+    log('user2', user2);
+
+    if (user1.failed || user2.failed) {
         console.error('Registration failed');
         process.exit(1);
     }
 
+    createdUsers.push(user1, user2);
+
     console.log('\n========== CREATE PRIVATE CHAT ==========');
-    const chatRes = await post('/chats/private', { peerId: user2.userId }, {
-        'x-user-id': user1.userId,
+    const chatRes = await fetch(`${BASE_URL}/chats/private`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user1.accessToken}`,
+            'Cookie': `refreshToken=${user1.cookies.refreshToken}; fprint=${user1.cookies.fprint}`
+        },
+        body: JSON.stringify({ peerId: user2.userId })
     });
-    const chatId = chatRes.data?._id;
-    log('Chat created', chatId);
+    const chat = await chatRes.json();
+    const chatId = chat.data?._id;
+    log('chat created', chatId);
 
     if (!chatId) {
-        console.error('Chat creation failed:', JSON.stringify(chatRes));
+        console.error('Chat creation failed');
         process.exit(1);
     }
 
-    const WS_URL = 'wss://192.168.100.8'
+    console.log('\n========== WS CONNECT ==========');
     const ownerSocket = io(WS_URL, {
         path: '/ws',
-        auth: { token: user1.token },
+        auth: { 
+            token: user1.accessToken,
+            fprint: user1.cookies.fprint
+        },
         transports: ['websocket'],
         rejectUnauthorized: false
     });
 
     const peerSocket = io(WS_URL, {
         path: '/ws',
-        auth: { token: user2.token },
+        auth: { 
+            token: user2.accessToken,
+            fprint: user2.cookies.fprint
+        },
         transports: ['websocket'],
         rejectUnauthorized: false
     });
@@ -145,7 +127,7 @@ function sleep(ms) {
                     console.log('\n========== TEST: message:delete ==========');
                     ownerSocket.emit('message:delete', { messageId }, (ack) => log('message:delete ack', ack));
 
-                    await sleep(500);
+                    await sleep(800);
                     console.log('\n========== ALL TESTS PASSED ==========\n');
                     cleanupAndExit();
                 }, 300);
@@ -154,15 +136,14 @@ function sleep(ms) {
     });
 
     ownerSocket.on('connect_error', (e) => {
-        console.error('owner connect_error:', e.message, e.description, e.context);
+        console.error('owner connect_error:', e.message);
     });
 
     function cleanupAndExit() {
         ownerSocket.disconnect();
         peerSocket.disconnect();
-        cleanup().then(() => {
-            process.exit(0);
-        });
+        console.log('\n========== DONE ==========');
+        process.exit(0);
     }
 
     setTimeout(() => {

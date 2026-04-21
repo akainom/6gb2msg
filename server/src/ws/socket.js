@@ -16,12 +16,18 @@ function initSocket(httpServer) {
             credentials: true,
         },
         path: '/ws',
+        allowEIO3: true,
     });
-
+    
     io.use(authMiddleware);
 
     io.on('connection', async (socket) => {
+        console.log('[WS] connection event, id:', socket.id, 'userId:', socket.data.userId);
         const userId = socket.data.userId;
+
+        socket.onAny((event, ...args) => {
+            console.log('[WS] event received:', event, 'from:', userId);
+        });
 
         try {
             const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
@@ -38,6 +44,8 @@ function initSocket(httpServer) {
             socket.disconnect(true);
             return;
         }
+
+        console.log('[WS] registering handlers for userId:', userId);
 
         registerMessageHandlers(io, socket);
         registerTypingHandlers(io, socket);

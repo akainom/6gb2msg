@@ -5,17 +5,13 @@ const { ApiError } = require('../mw/exception');
 const es = require('../search/es.client');
 const { mapMessage } = require('../search/es.mapper');
 
+const IDX_MESSAGES = process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1';
+
 class MessageRepo extends Base {
     constructor() {
         super(Message);
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {{ limit: number, skip: number }} opt
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Array>} paginated members for chat
-     */
     async getByChat(chatId, opt = { limit: 30, skip: 0 }, session = null) {
         return this.model.find({ chat_id: chatId })
             .sort({ createdAt: -1 })
@@ -25,12 +21,6 @@ class MessageRepo extends Base {
             .lean();
     }
 
-    /**
-     * @description creates a new message and validates content
-     * @param {{ chat_id, sender_id, content?, attachments? }} data
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} created message
-     */
     async createMessage(data, session = null) {
         const { chat_id, sender_id, content, attachments = [] } = data;
 
@@ -40,22 +30,20 @@ class MessageRepo extends Base {
 
         const msg = await this.create({ chat_id, sender_id, content, attachments }, session);
 
-        es.index({
-            index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
-            id: String(msg._id),
-            document: mapMessage(msg)
-        }).catch(e => console.error('[ES] Message sync error:', e.message));
+        try {
+            await es.index({
+                index: IDX_MESSAGES,
+                id: String(msg._id),
+                document: mapMessage(msg)
+            });
+            console.log('[ES] Message indexed:', msg._id);
+        } catch (e) {
+            console.error('[ES] Message index error:', e.message);
+        }
 
         return msg;
     }
 
-    /**
-     * 
-     * @param {mongoose.mongo.ObjectId} chatId 
-     * @param {Message} message 
-     * @param {mongoose.ClientSession} session 
-     * @returns {Promise<Object>} forwarded message
-     */
     async forwardMessage(chatId, message, fromId, session = null) {
         const msg = await this.create({
             chat_id: chatId,
@@ -66,39 +54,46 @@ class MessageRepo extends Base {
             forwarded_by: fromId,
         }, session);
 
-        es.index({
-            index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
-            id: String(msg._id),
-            document: mapMessage(msg)
-        }).catch(e => console.error('[ES] Message sync error:', e.message));
+        try {
+            await es.index({
+                index: IDX_MESSAGES,
+                id: String(msg._id),
+                document: mapMessage(msg)
+            });
+        } catch (e) {
+            console.error('[ES] Message forward index error:', e.message);
+        }
 
         return msg;
     }
 
-    /**
-     * @description edits message content (sender only)
-     * @param {mongoose.Types.ObjectId} messageId
-     * @param {string} newContent
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} updated message
-     */
     async editMessage(messageId, newContent, session = null) {
         if (!newContent?.trim()) {
             throw ApiError.BadRequest('content cannot be empty', 'ERR_MSG_EMPTY', null);
         }
 
-        return this.model.findByIdAndUpdate(
+        const message = await this.model.findByIdAndUpdate(
             messageId,
             { $set: { content: newContent.trim(), is_edited: true } },
             { new: true, runValidators: true, session }
         ).lean();
+
+        if (message) {
+            try {
+                await es.index({
+                    index: IDX_MESSAGES,
+                    id: String(messageId),
+                    document: mapMessage(message)
+                });
+                console.log('[ES] Message edited:', messageId, '->', message.content);
+            } catch (e) {
+                console.error('[ES] Message edit error:', e.message);
+            }
+        }
+
+        return message;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} messageId
-     * @param {mongoose.Types.ObjectId} senderId
-     * @returns {Promise<boolean>}
-     */
     async isSender(messageId, senderId) {
         const msg = await this.model.findOne({
             _id: messageId,
@@ -108,10 +103,6 @@ class MessageRepo extends Base {
         return !!msg;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} messageId
-     * @returns {Promise<Object>} updated message
-     */
     async markAsRead(messageId) {
         return this.model.findByIdAndUpdate(
             messageId,
@@ -120,16 +111,11 @@ class MessageRepo extends Base {
         ).lean();
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.Types.ObjectId} userId reader
-     * @returns {Promise<number>} count of messages marked as read
-     */
     async markAllAsRead(chatId, userId) {
         const result = await this.model.updateMany(
             {
                 chat_id: chatId,
-                sender_id: { $ne: userId }, // dont mark own messages
+                sender_id: { $ne: userId },
                 'status.is_read': false
             },
             { $set: { 'status.is_read': true, 'status.read_at': new Date() } }
@@ -138,22 +124,18 @@ class MessageRepo extends Base {
         return result.modifiedCount;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} messageId
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<Object>} deleted message
-     */
     async deleteMessage(messageId, session = null) {
         const msg = await this.model.findByIdAndDelete(messageId, { session }).lean();
         
         if (msg) {
             try {
                 await es.delete({
-                    index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+                    index: IDX_MESSAGES,
                     id: String(messageId)
                 });
+                console.log('[ES] Message deleted from index:', messageId);
             } catch (e) {
-                if (e?.meta?.statusCode !== 404) {
+                if (e.meta?.statusCode !== 404) {
                     console.error('[ES] Message delete error:', e.message);
                 }
             }
@@ -162,11 +144,6 @@ class MessageRepo extends Base {
         return msg;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} chatId
-     * @param {mongoose.ClientSession} session
-     * @returns {Promise<number>} deleted count
-     */
     async deleteByChatId(chatId, session = null) {
         const messages = await this.model.find({ chat_id: chatId }).select('_id').lean();
         const result = await this.model.deleteMany({ chat_id: chatId }, { session });
@@ -174,11 +151,11 @@ class MessageRepo extends Base {
         for (const msg of messages) {
             try {
                 await es.delete({
-                    index: process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1',
+                    index: IDX_MESSAGES,
                     id: String(msg._id)
                 });
             } catch (e) {
-                if (e?.meta?.statusCode !== 404) {
+                if (e.meta?.statusCode !== 404) {
                     console.error('[ES] Message delete error:', e.message);
                 }
             }
@@ -187,11 +164,6 @@ class MessageRepo extends Base {
         return result.deletedCount;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId|string} chatId
-     * @param {mongoose.Types.ObjectId|string} userId
-     * @returns {Promise<number>} unread message count
-     */
     async getUnreadCount(chatId, userId) {
         return this.model.countDocuments({
             chat_id: chatId,

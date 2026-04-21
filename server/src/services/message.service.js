@@ -89,7 +89,7 @@ class MessageService {
             query: {
                 bool: {
                     filter: [{ term: { chat_id: String(chatId) } }],
-                    must: [{ match: { content: { query: q, fuzziness: 'AUTO' } } }]
+                    must: [{ match: { content: q } }]
                 }
             },
         });
@@ -106,11 +106,29 @@ class MessageService {
      * @param {string} newContent
      */
     async editMessage(userId, messageId, newContent) {
+        const msg = await messageRepo.getById(messageId);
+        if (!msg) throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
+
         const ok = await messageRepo.isSender(messageId, userId);
         if (!ok) {
             throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
         }
-        return await messageRepo.editMessage(messageId, newContent);
+
+        const updated = await messageRepo.editMessage(messageId, newContent);
+
+        const chat = await chatRepo.getById(msg.chat_id);
+        const lastMsgIdStr = String(chat?.last_message?.message_id);
+        const messageIdStr = String(messageId);
+        const updatedIdStr = String(updated._id);
+        if (lastMsgIdStr === messageIdStr || lastMsgIdStr === updatedIdStr) {
+            await chatRepo.updateLastMessage(msg.chat_id, {
+                message_id: updated._id,
+                text: previewText(updated.content),
+                sent_at: updated.createdAt,
+            });
+        }
+
+        return updated;
     }
 
     /**

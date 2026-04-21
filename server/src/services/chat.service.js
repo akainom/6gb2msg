@@ -32,7 +32,7 @@ class ChatService {
             from: skip,
             size: limit,
             query: {
-                match: { title: { query: q, fuzziness: 'AUTO' } }
+                match: { title: q }
             },
         });
 

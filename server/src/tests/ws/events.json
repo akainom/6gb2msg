@@ -1,0 +1,97 @@
+[
+  {
+    "event": "chat:join private",
+    "data": {
+      "ok": true
+    },
+    "time": 1776770942092
+  },
+  {
+    "event": "chat:join group",
+    "data": {
+      "ok": true
+    },
+    "time": 1776770942094
+  },
+  {
+    "event": "user:online",
+    "data": {
+      "userId": "69e75f6f0569b1fc318ac13f"
+    },
+    "time": 1776770948211
+  },
+  {
+    "event": "user:online",
+    "data": {
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770955009
+  },
+  {
+    "event": "user:online",
+    "data": {
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770955012
+  },
+  {
+    "event": "message:new",
+    "data": {
+      "message": {
+        "chat_id": "69e75f700569b1fc318ac149",
+        "sender_id": "69e75f6f0569b1fc318ac12d",
+        "content": "private msg",
+        "attachments": [],
+        "is_edited": false,
+        "is_forwarded": false,
+        "status": {
+          "is_read": false,
+          "read_at": null
+        },
+        "_id": "69e75f8b0569b1fc318ac15a",
+        "createdAt": "2026-04-21T11:29:15.189Z",
+        "updatedAt": "2026-04-21T11:29:15.189Z",
+        "__v": 0
+      }
+    },
+    "time": 1776770955221
+  },
+  {
+    "event": "typing:start",
+    "data": {
+      "chatId": "69e75f700569b1fc318ac14d",
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770956289
+  },
+  {
+    "event": "typing:stop",
+    "data": {
+      "chatId": "69e75f700569b1fc318ac14d",
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770956487
+  },
+  {
+    "event": "message:new",
+    "data": {
+      "message": {
+        "chat_id": "69e75f700569b1fc318ac14d",
+        "sender_id": "69e75f6f0569b1fc318ac12d",
+        "content": "group msg!",
+        "attachments": [],
+        "is_edited": false,
+        "is_forwarded": false,
+        "status": {
+          "is_read": false,
+          "read_at": null
+        },
+        "_id": "69e75f8c0569b1fc318ac160",
+        "createdAt": "2026-04-21T11:29:16.904Z",
+        "updatedAt": "2026-04-21T11:29:16.904Z",
+        "__v": 0
+      }
+    },
+    "time": 1776770956933
+  }
+]

@@ -1,0 +1,84 @@
+[
+  {
+    "event": "chat:join",
+    "data": {
+      "ok": true
+    },
+    "time": 1776770948201
+  },
+  {
+    "event": "user:online",
+    "data": {
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770955007
+  },
+  {
+    "event": "typing:start",
+    "data": {
+      "chatId": "69e75f700569b1fc318ac14d",
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770956286
+  },
+  {
+    "event": "typing:stop",
+    "data": {
+      "chatId": "69e75f700569b1fc318ac14d",
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770956484
+  },
+  {
+    "event": "message:new",
+    "data": {
+      "message": {
+        "chat_id": "69e75f700569b1fc318ac14d",
+        "sender_id": "69e75f6f0569b1fc318ac12d",
+        "content": "group msg!",
+        "attachments": [],
+        "is_edited": false,
+        "is_forwarded": false,
+        "status": {
+          "is_read": false,
+          "read_at": null
+        },
+        "_id": "69e75f8c0569b1fc318ac160",
+        "createdAt": "2026-04-21T11:29:16.904Z",
+        "updatedAt": "2026-04-21T11:29:16.904Z",
+        "__v": 0
+      }
+    },
+    "time": 1776770956930
+  },
+  {
+    "event": "message:edited",
+    "data": {
+      "message": {
+        "_id": "69e75f8c0569b1fc318ac160",
+        "chat_id": "69e75f700569b1fc318ac14d",
+        "sender_id": "69e75f6f0569b1fc318ac12d",
+        "content": "edited!",
+        "attachments": [],
+        "is_edited": true,
+        "is_forwarded": false,
+        "status": {
+          "is_read": false,
+          "read_at": null
+        },
+        "createdAt": "2026-04-21T11:29:16.904Z",
+        "updatedAt": "2026-04-21T11:29:17.251Z",
+        "__v": 0
+      }
+    },
+    "time": 1776770957265
+  },
+  {
+    "event": "message:read",
+    "data": {
+      "chatId": "69e75f700569b1fc318ac14d",
+      "userId": "69e75f6f0569b1fc318ac12d"
+    },
+    "time": 1776770957574
+  }
+]

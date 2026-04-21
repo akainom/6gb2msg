@@ -145,11 +145,16 @@ class ProfileRepo extends Base {
         }], { session });
 
         if (dto.isComplete === true) {
-            es.index({
-                index: process.env.ELASTIC_INDEX_PROFILES || 'profiles_v1',
-                id: String(profile._id),
-                document: mapProfile(profile.toObject())
-            }).catch(e => console.error('[ES] Profile sync error:', e.message));
+            try {
+                await es.index({
+                    index: process.env.ELASTIC_INDEX_PROFILES || 'profiles_v1',
+                    id: String(profile._id),
+                    document: mapProfile(profile.toObject())
+                });
+                console.log('[ES] Profile indexed:', profile._id);
+            } catch (e) {
+                console.error('[ES] Profile sync error:', e.message);
+            }
         }
 
         return profile;

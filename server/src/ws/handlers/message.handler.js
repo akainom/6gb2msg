@@ -1,4 +1,5 @@
 const MessageService = require('../../services/message.service');
+const chatRepo = require('../../repos/chat.repo');
 
 /**
  * @param {import('socket.io').Server} io
@@ -92,9 +93,12 @@ function registerMessageHandlers(io, socket) {
     socket.on('chat:join', async (payload, ack) => {
         try {
             const { chatId } = payload ?? {};
-            if (!chatId) return ack?.({ error: 'ERR_FIELDS_MISSING' });
+            if (!chatId) {
+                return ack?.({ error: 'ERR_FIELDS_MISSING' });
+            }
 
             const isParticipant = await chatRepo.isParticipant(chatId, userId);
+            
             if (!isParticipant) {
                 return ack?.({ error: 'ERR_CHAT_FORB', message: 'not a participant' });
             }
@@ -115,6 +119,24 @@ function registerMessageHandlers(io, socket) {
             ack?.({ ok: true });
         } catch (e) {
             ack?.({ error: e.code ?? 'ERR_CHAT_LEAVE', message: e.message });
+        }
+    });
+
+    socket.on('message:forward', async (payload, ack) => {
+        try {
+            const { messageId, targetChatId } = payload ?? {};
+
+            if (!messageId || !targetChatId) {
+                return ack?.({ error: 'ERR_FIELDS_MISSING', message: 'messageId and targetChatId required' });
+            }
+
+            const message = await MessageService.forwardMessage(targetChatId, messageId, userId);
+
+            io.to(`chat:${targetChatId}`).emit('message:new', { message });
+
+            ack?.({ ok: true, message });
+        } catch (e) {
+            ack?.({ error: e.code ?? 'ERR_MSG_FORW', message: e.message });
         }
     });
 }

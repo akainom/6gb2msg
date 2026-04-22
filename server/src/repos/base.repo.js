@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ApiError } = require('../mw/exception');
 
 class BaseRepository {
     /**
@@ -67,6 +68,33 @@ class BaseRepository {
             .sort({ createdAt: -1 })
             .session(session)
             .lean();
+    }
+
+    /**
+     * @description safely calls func with transaction
+     * @param {(self: BaseRepository, bag?, session: mongoose.ClientSession) } func
+     * @param {*} bag stores internal scheiße used in func 
+     * @param {{message: String, code: String, val?}} catchClause 
+     * @returns success func call result
+     */
+    async transactCall(func, bag = null, catchClause) {
+        const session = await mongoose.startSession();
+
+        try {
+            await session.startTransaction();
+
+            const result = await func(this, bag, session);
+            
+            await session.commitTransaction();
+            return result;
+        } catch (e){
+            await session.abortTransaction();
+            if (e instanceof ApiError) throw e;
+            throw ApiError.BadRequest(...catchClause);
+        }
+        finally {
+            await session.endSession();
+        }
     }
 }
 

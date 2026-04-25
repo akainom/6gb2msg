@@ -21,10 +21,10 @@ const ReportSchema = new Schema({
     type: String,
     maxlength: 500
   },
-  message_id: {
+  message_ids: [{
     type: Schema.Types.ObjectId,
     ref: 'Message'
-  },
+  }],
   status: {
     type: String,
     enum: ['pending', 'resolved', 'dismissed'],

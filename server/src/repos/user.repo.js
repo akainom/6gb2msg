@@ -148,6 +148,34 @@ class UserRepo extends Base {
     async deleteUser(userid, session = null) {
         return await this.model.findByIdAndDelete(userid, { session: session });
     }
+
+    async banUser(userId, reason, unbanDate, session = null) {
+        return await this.model.findByIdAndUpdate(
+            userId,
+            { 
+                $set: { 
+                    isBanned: true, 
+                    banReason: reason, 
+                    bannedUntil: unbanDate
+                } 
+            },
+            { new: true, session }
+        ).lean();
+    }
+
+    async unbanUser(userId, session = null) {
+        return await this.model.findByIdAndUpdate(
+            userId,
+            { 
+                $set: { 
+                    isBanned: false, 
+                    banReason: null, 
+                    bannedDue: null 
+                } 
+            },
+            { new: true, session }
+        ).lean();
+    }
 }
 
 module.exports = new UserRepo();

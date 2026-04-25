@@ -34,6 +34,18 @@ const UserSchema = new Schema ({
         enum: ['User', 'Admin'],
         default: 'User'
     },
+    isBanned: {
+        type: Boolean,
+        default: false
+    },
+    banReason: {
+        type: String,
+        default: null
+    },
+    bannedUntil: {
+        type: Date,
+        default: null
+    },
     refreshTokens: [{
         token: {
             type: String,

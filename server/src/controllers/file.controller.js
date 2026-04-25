@@ -75,7 +75,7 @@ async function uploadAttachment(req, res, next) {
 
 async function getAvatar(req, res, next) {
     try {
-        const { profileId } = req.params;
+        const { profileId } = req.params ?? '';
         
         const profile = await ProfileService.getById(profileId);
         

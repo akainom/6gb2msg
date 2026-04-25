@@ -68,6 +68,19 @@ class ReportService {
         return await reportRepo.getPending(opt);
     }
 
+    async dismissReport(adminId, reportId) {
+        if (!adminProfile || adminUser.role !== 'Admin') {
+            throw ApiError.Forbidden('admin only', 'ERR_ADMIN', null);
+        }
+
+        const report = await reportRepo.getById(reportId);
+        if (!report) {
+            throw ApiError.NotFound('report not found', 'ERR_RPT_NF', reportId);
+        }
+
+        return await reportRepo.updateStatus(reportId, 'dismissed');
+    }
+
     async banUser(adminId, reportId, userIdToBan, reason, unbanDate = new Date(Date.now() + 24 * 60 * 60 * 1000)) {
         const adminProfile = await ProfileRepo.getByUserId(adminId);
         const adminUser = await userRepo.getById(adminId);
@@ -84,8 +97,16 @@ class ReportService {
             throw ApiError.BadRequest('wrong unban date', 'ERR_UNB_WRG', { unbanDate });
         }
 
-        const bannedUser = await userRepo.banUser(targetProfile.user_id, reason, unbanDate);
-        await reportRepo.updateStatus(reportId, 'resolved')
+        const bannedUser = await userRepo.transactCall(
+            async (self, bag, session) => {
+                const banned = await self.banUser(targetProfile.user_id, reason, unbanDate, session);
+                await bag.reportRepo.updateStatus(reportId, 'resolved', session);
+                
+                return banned;
+            },
+            { reportRepo },
+            { message: 'unable to ban user', code: 'ERR_USR_BAN', val: { reportId: reportId, targetId: userIdToBan } }
+        );
         return bannedUser;
     }
 

@@ -124,11 +124,11 @@ class AuthService {
         const regDTO = await Encryptor.encryptDTODefault(data);
 
         if (await UserRepo.getByEmailHash(Encryptor.hashEmail(data.email))) {
-            throw ApiError.BadRequest('registration failed', 'ERR_EMAIL_EX', data.email);
+            throw ApiError.BadRequest('email exists', 'ERR_EMAIL_EX', data.email);
         }
         
         if (await ProfileRepo.usernameExists(data.username)) {
-            throw ApiError.BadRequest('registration failed', 'ERR_UNAME_EX', data.username);
+            throw ApiError.BadRequest('username exists', 'ERR_UNAME_EX', data.username);
         }
 
         const profileDTO = new ProfileDTO({...regDTO, isComplete: true});

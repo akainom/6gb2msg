@@ -37,8 +37,9 @@ async function login(username, password) {
     const cookies = parseCookies(response);
     const accessToken = body.data.accessToken;
     const userId = body.data.user_id;
+    const profileId = body.data._id;
 
-    return { accessToken, userId, cookies };
+    return { accessToken, userId, profileId, cookies };
 }
 
 async function register(username, email, password) {

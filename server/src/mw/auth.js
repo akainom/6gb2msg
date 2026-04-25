@@ -44,6 +44,25 @@ const authMiddleware = async (req, res, next) => {
             });
         }
 
+        if (user.bannedUntil) {
+            if (new Date(user.bannedUntil) > new Date()) {
+                return res.status(403).json({
+                    code: 'ERR_USER_BANNED',
+                    message: 'User is banned',
+                    reason: user.banReason,
+                    until: user.bannedUntil
+                });
+            } else {
+                await UserRepo.transactCall(
+                    async (self, bag, session) => {
+                        await self.unbanUser(userId, session);
+                    },
+                    null,
+                    {}
+                );
+            }
+        }
+
         const isValidFprint = Encryptor.compareFprint(fprint, claim);
         if (!isValidFprint) {
             return res.status(401).json({

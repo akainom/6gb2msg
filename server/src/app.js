@@ -15,6 +15,7 @@ app.use('/auth', require('./routes/auth.routes'));
 app.use('/chats', require('./routes/chats.routes'));
 app.use('/profiles', require('./routes/profiles.routes'));
 app.use('/files', require('./routes/files.routes'));
+app.use('/reports', require('./routes/reports.routes'));
 app.use(ApiErrorMiddlewareFunction);
 
 module.exports = app;

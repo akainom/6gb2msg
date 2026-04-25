@@ -39,7 +39,6 @@ const ChatSchema = new Schema({
         required: true,
         validate: {
             validator: function(arr) {
-                // private: exactly 2, group: 2+
                 if (this.type === 'private') return arr.length === 2;
                 return arr.length >= 2;
             },

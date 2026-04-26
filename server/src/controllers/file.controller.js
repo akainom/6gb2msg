@@ -87,7 +87,7 @@ async function getAvatar(req, res, next) {
         
         res.setHeader('X-Accel-Redirect', `/protected/avatars/${profile.avatar}`);
         res.setHeader('Content-Type', 'image/webp');
-        res.sendFile(filePath);
+        res.status(200).end();
     } catch (e) {
         next(e);
     }

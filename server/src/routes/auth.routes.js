@@ -21,7 +21,7 @@ router.post('/refresh', AuthController.refresh.bind(AuthController));
 
 
 
-/* 
+
 // GET /auth/oauth/google  
 router.get(
     '/oauth/google',
@@ -43,5 +43,5 @@ router.get(
 
 // POST /auth/oauth/complete  
 router.post('/oauth/complete', AuthController.completeOAuthProfile.bind(AuthController));
-*/
+
 module.exports = router;

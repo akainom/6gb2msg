@@ -140,3 +140,9 @@ vite.config.ts.timestamp-*
 
 mongo*/
 *mongo.js
+uploads/
+*.png
+*.jpg
+*.jpeg
+*.env
+client/

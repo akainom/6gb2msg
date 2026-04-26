@@ -8,13 +8,12 @@ passport.use(
             clientID: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             callbackURL: process.env.GOOGLE_CALLBACK_URL,
-            userProfileURL: 'https://www.googleapis.com/oauth2/v3/userinfo',
         },
         async (oauthAccessToken, oauthRefreshToken, _profile, done) => {
             try {
                 const response = await fetch(
                     'https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses,photos,metadata',
-                    { headers: { Authorization: `Bearer ${oauthAccessToken}` } }
+                    { headers: { Authorization: `Bearer ${oauthAccessToken}`, 'Content-Type': 'application/json' } }
                 );
 
                 if (!response.ok) {

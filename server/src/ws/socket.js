@@ -10,9 +10,13 @@ const chatRepo = require('../repos/chat.repo');
  * @returns {import('socket.io').Server}
  */
 function initSocket(httpServer) {
+    const corsOrigin = process.env.CLIENT_URL 
+        ? [process.env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:3000']
+        : ['http://localhost:5173', 'http://localhost:3000'];
+    
     const io = new Server(httpServer, {
         cors: {
-            origin: process.env.CLIENT_URL,
+            origin: corsOrigin,
             credentials: true,
         },
         path: '/ws',

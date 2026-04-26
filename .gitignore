@@ -145,4 +145,4 @@ uploads/
 *.jpg
 *.jpeg
 client/
-*.env
+server/src/tests/server.test.env

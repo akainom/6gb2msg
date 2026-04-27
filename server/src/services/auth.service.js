@@ -74,11 +74,12 @@ class AuthService {
      * @param {string} refreshToken 
      * @returns {Promise<Object|null>} new tokens
      */
-    async exchangeRefreshToken(userid, refreshToken) {
+    async exchangeRefreshToken(refreshToken) {
         try {
             const decoded = await TokenService.verifyRefreshToken(refreshToken);
             
             if (!decoded) return null;
+            const userid = decoded.userid;
             const isValid = await TokenService.validateToken(userid, refreshToken);
             if (!isValid) return null;
             await TokenService.removeToken(userid, refreshToken);

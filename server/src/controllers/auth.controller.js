@@ -168,13 +168,12 @@ class AuthController {
     async refresh(req, res, next) {
         try {
             const refreshToken = req.cookies[REFRESH_COOKIE_NAME];
-            const userid = req.headers['x-user-id'] ?? req.body.userid;
 
-            if (!refreshToken || !userid) {
-                throw ApiError.BadRequest('missing credentials', 'ERR_CREDS_MISSING', null);
+            if (!refreshToken) {
+                throw ApiError.BadRequest('missing refresh token', 'ERR_TOKEN_MISSING', null);
             }
 
-            const result = await AuthService.exchangeRefreshToken(userid, refreshToken);
+            const result = await AuthService.exchangeRefreshToken(refreshToken);
 
             if (!result) {
                 clearRefreshCookie(res);

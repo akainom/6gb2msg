@@ -41,9 +41,9 @@ class TokenService {
      * @param {string|number} [expiresIn='15d'] 
      * @returns {string} JWT refresh token
      */
-    genRefreshToken(userid, expiresIn = null) {
+    genRefreshToken(userid, fprint = null, expiresIn = null) {
         return jwt.sign(
-            { userid },
+            { userid, fprint },
             JWT_REFRESH_SECRET,
             { expiresIn: expiresIn ?? '15d' }
         );

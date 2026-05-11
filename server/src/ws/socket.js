@@ -9,7 +9,7 @@ const chatRepo = require('../repos/chat.repo');
  * @param {import('http').Server} httpServer
  * @returns {import('socket.io').Server}
  */
-function initSocket(httpServer) {
+function initSocket(httpServer, app) {
     const corsOrigin = process.env.CLIENT_URL 
         ? [process.env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:3000']
         : ['http://localhost:5173', 'http://localhost:3000'];
@@ -22,7 +22,8 @@ function initSocket(httpServer) {
         path: '/ws',
         allowEIO3: true,
     });
-    
+
+    app.set('io', io);    
     io.use(authMiddleware);
 
     io.on('connection', async (socket) => {
@@ -37,11 +38,12 @@ function initSocket(httpServer) {
             const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
             const roomIds = chats.map(c => `chat:${c._id}`);
             await socket.join(roomIds);
+            socket._joinedRooms = roomIds;
 
-            await ProfileService.setOnlineStatus(userId, 'online');
+            const onlineStatus = await ProfileService.setOnlineStatus(userId, 'online');
 
             for (const roomId of roomIds) {
-                socket.to(roomId).emit('user:online', { userId });
+                socket.to(roomId).emit('user:online', { userId, status: onlineStatus });
             }
         } catch (e) {
             console.error(`[WS] connection setup failed for ${userId}:`, e.message);
@@ -58,10 +60,11 @@ function initSocket(httpServer) {
             try {
                 await ProfileService.setOnlineStatus(userId, 'offline');
 
-                const rooms = [...socket.rooms].filter(r => r.startsWith('chat:'));
+                const rooms = socket._joinedRooms || [];
                 for (const roomId of rooms) {
-                    socket.to(roomId).emit('user:offline', {
+                    io.to(roomId).emit('user:offline', {
                         userId,
+                        status: 'offline',
                         last_online: new Date(),
                     });
                 }

@@ -198,6 +198,27 @@ class MessageService {
         null,
         { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
     }
+
+    async forwardMessages(chatId, messageIds, fromId) {
+        await this._requireParticipant(chatId, fromId);
+
+        const results = [];
+
+        for (const messageId of messageIds) {
+            const message = await messageRepo.getById(messageId);
+            await this._requireParticipant(message.chat_id, fromId);
+
+            const forwarded = await messageRepo.transactCall(async (self, bag, session) => {
+                return await self.forwardMessage(chatId, message, fromId, session);
+            },
+            null,
+            { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
+
+            results.push(forwarded);
+        }
+
+        return results;
+    }
 }
 
 module.exports = new MessageService();

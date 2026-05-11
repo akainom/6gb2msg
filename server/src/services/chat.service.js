@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const chatRepo = require('../repos/chat.repo');
 const messageRepo = require('../repos/message.repo');
+const { ProfileRepo } = require('../repos/profile.repo');
 const { ApiError } = require('../mw/exception');
 const es = require('../search/es.client');
 const IDX_CHATS = process.env.ELASTIC_INDEX_CHATS || 'chats_v1';
@@ -12,7 +13,30 @@ class ChatService {
      * @returns related chat
      */
     async listForUser(userId, opt = { limit: 20, skip: 0 }) {
-        return await chatRepo.getByUserId(userId, opt);
+        const chats = await chatRepo.getByUserId(userId, opt);
+
+        for (const chat of chats) {
+            if (chat.type === 'private' && chat.participants) {
+                const peerParticipant = chat.participants.find(
+                    (p) => String(p.user_id) !== String(userId)
+                );
+                if (peerParticipant) {
+                    const peerProfile = await ProfileRepo.getByUserId(peerParticipant.user_id);
+                    chat.peer = peerProfile
+                        ? {
+                              user_id: String(peerProfile.user_id),
+                              profile_id: String(peerProfile._id),
+                              username: peerProfile.username,
+                              displayName: peerProfile.displayName,
+                              status: peerProfile.status,
+                              last_online: peerProfile.last_online,
+                          }
+                        : null;
+                }
+            }
+        }
+
+        return chats;
     }
 
     async search(query, opt = {}) {
@@ -68,7 +92,9 @@ class ChatService {
         if (userId.toString() === peerId.toString()) {
             throw ApiError.BadRequest('cannot create chat with yourself', 'ERR_CHAT_SELF', null);
         }
-        return await chatRepo.createPrivate(userId, peerId);
+        const peerProfile = await ProfileRepo.getByUserId(peerId);
+        const title = peerProfile?.displayName || peerProfile?.username || 'Private';
+        return await chatRepo.createPrivate(userId, peerId, title);
     }
 
     /**

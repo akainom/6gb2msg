@@ -11,11 +11,12 @@ class ProfileService {
      * @returns {Promise<Object>} public profile by profileId
      */
     async getById(profileId) {
-        const profile = await ProfileRepo.getById(profileId);
-        if (!profile) {
+        try {
+            const profile = await ProfileRepo.getById(profileId);
+            return profile;
+        } catch (e) {
             throw ApiError.NotFound('profile not found', 'ERR_PROF_NF', profileId);
         }
-        return profile;
     }
 
     /**
@@ -63,6 +64,7 @@ class ProfileService {
 
         const $set = {};
         if (data.username  !== undefined) $set.username  = data.username.trim();
+        if (data.displayName !== undefined) $set.displayName = data.displayName;
         if (data.bio       !== undefined) $set.bio       = data.bio;
         if (data.location  !== undefined) $set.location  = data.location;
         if (data.avatar    !== undefined) $set.avatar    = data.avatar;
@@ -86,16 +88,30 @@ class ProfileService {
      * @param {'online'|'offline'|'away'|'do not disturb'} status
      * @returns {Promise<void>}
      */
-    async setOnlineStatus(userId, status) {
-        const $set = { status };
-        if (status === 'offline') {
-            $set.last_online = new Date();
+    async setOnlineStatus(userId, requestedStatus) {
+        const $set = { last_online: new Date() };
+        let effectiveStatus = requestedStatus;
+
+        if (requestedStatus === 'online') {
+            const profile = await ProfileRepo.getByUserId(userId);
+            if (profile?.status && profile.status !== 'offline') {
+                effectiveStatus = profile.status;
+            } else {
+                $set.status = 'online';
+            }
+        } else if (requestedStatus === 'offline') {
+            $set.status = 'offline';
+        } else {
+            const allowed = ['online', 'offline', 'away', 'do not disturb'];
+            $set.status = allowed.includes(requestedStatus) ? requestedStatus : 'online';
         }
 
         await ProfileRepo.model.findOneAndUpdate(
             { user_id: userId },
             { $set }
         );
+
+        return effectiveStatus;
     }
 
         /**
@@ -117,41 +133,60 @@ class ProfileService {
         if (!Number.isFinite(skip) || skip < 0) skip = 0;
         if (limit > 100) limit = 100;
 
-        const result = await es.search({
-            index: IDX_PROFILES,
-            from: skip,
-            size: limit,
-            query: {
-                bool: {
-                    should: [
-                        { term: { 'username.raw': q.toLowerCase() } },
-                        { prefix: { 'username.raw': q.toLowerCase() } },
-                        {
-                            match: {
-                                username: {
-                                    query: q,
-                                    fuzziness: 'AUTO',
+        let total = 0;
+        let profiles = [];
+
+        try {
+            const result = await es.search({
+                index: IDX_PROFILES,
+                from: skip,
+                size: limit,
+                query: {
+                    bool: {
+                        should: [
+                            { term: { 'username.raw': q.toLowerCase() } },
+                            { prefix: { 'username.raw': q.toLowerCase() } },
+                            {
+                                match: {
+                                    username: {
+                                        query: q,
+                                        fuzziness: 'AUTO',
+                                    },
                                 },
                             },
-                        },
-                    ],
-                    minimum_should_match: 1,
+                        ],
+                        minimum_should_match: 1,
+                    },
                 },
-            },
-            sort: [
-                { _score: 'desc' },
-                { updatedAt: 'desc' },
-            ],
-        });
+                sort: [
+                    { _score: 'desc' },
+                    { updatedAt: 'desc' },
+                ],
+            });
 
-        const profiles = (result.hits?.hits ?? []).map((hit) => ({
-            _id: hit._id,
-            ...hit._source,
-            _score: hit._score,
-        }));
+            profiles = (result.hits?.hits ?? []).map((hit) => ({
+                _id: hit._id,
+                ...hit._source,
+                _score: hit._score,
+            }));
+            total = result.hits?.total?.value ?? 0;
+        } catch (e) {
+            console.error('[ES] Search fallback to MongoDB:', e.message);
+        }
+
+        if (total === 0) {
+            const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            total = await ProfileRepo.model.countDocuments({ username: regex, isComplete: true });
+            const docs = await ProfileRepo.model.find({ username: regex, isComplete: true })
+                .skip(skip)
+                .limit(limit)
+                .sort({ updatedAt: -1 })
+                .lean();
+            profiles = docs;
+        }
 
         return {
-            total: result.hits?.total?.value ?? 0,
+            total,
             profiles,
         };
     }

@@ -90,7 +90,8 @@ class BaseRepository {
         } catch (e){
             await session.abortTransaction();
             if (e instanceof ApiError) throw e;
-            throw ApiError.BadRequest(...catchClause);
+            console.error('[transact] underlying error:', e.message, e.stack?.split('\n')[1]);
+            throw ApiError.BadRequest(catchClause.message, catchClause.code, catchClause.val);
         }
         finally {
             await session.endSession();

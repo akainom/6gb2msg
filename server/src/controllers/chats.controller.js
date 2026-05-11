@@ -1,6 +1,7 @@
 const ChatService = require('../services/chat.service');
 const { ApiError } = require('../mw/exception');
 const { getUserId } = require('../mw/request');
+const systemLog = require('../services/systemLog.service');
 
 class ChatController {
 
@@ -70,6 +71,18 @@ class ChatController {
 
             const chat = await ChatService.createPrivate(userId, peerId);
 
+            systemLog.write('chat:create', { type: 'private', chatId: chat._id, peerId }, userId, req.ip);
+
+            const io = req.app.get('io');
+            if (io) {
+                for (const [id, socket] of io.sockets.sockets) {
+                    const sockUserId = socket.data?.userId;
+                    if (sockUserId && String(sockUserId) !== String(userId) && String(sockUserId) === String(peerId)) {
+                        socket.emit('chat:new', { chat });
+                    }
+                }
+            }
+
             return res.status(201).json({ status: 'ok', data: chat });
         } catch (e) {
             next(e);
@@ -90,6 +103,20 @@ class ChatController {
             }
 
             const chat = await ChatService.createGroup(userId, title, memberIds, avatar);
+
+            systemLog.write('chat:create', { type: 'group', chatId: chat._id, title, memberCount: memberIds.length + 1 }, userId, req.ip);
+
+            const io = req.app.get('io');
+            if (io) {
+                const participantIds = new Set(chat.participants.map((p) => String(p.user_id)));
+                participantIds.delete(String(userId));
+                for (const [id, socket] of io.sockets.sockets) {
+                    const sockUserId = socket.data?.userId;
+                    if (sockUserId && participantIds.has(String(sockUserId))) {
+                        socket.emit('chat:new', { chat });
+                    }
+                }
+            }
 
             return res.status(201).json({ status: 'ok', data: chat });
         } catch (e) {
@@ -166,6 +193,8 @@ class ChatController {
             const { chatId } = req.params;
 
             await ChatService.deleteChat(userId, chatId);
+
+            systemLog.write('chat:delete', { chatId }, userId, req.ip);
 
             return res.status(200).json({ status: 'ok' });
         } catch (e) {

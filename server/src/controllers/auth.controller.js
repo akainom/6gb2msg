@@ -1,20 +1,22 @@
 const { AuthService, regDTO, loginDTO } = require('../services/auth.service');
 const { ApiError } = require('../mw/exception');
+const systemLog = require('../services/systemLog.service');
 const validator = require('validator');
 
 const REFRESH_COOKIE_NAME = 'refreshToken';
+const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || 'strict';
 const REFRESH_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days in ms
+    secure: process.env.NODE_ENV === 'production' || COOKIE_SAMESITE === 'none',
+    sameSite: COOKIE_SAMESITE,
+    maxAge: 15 * 24 * 60 * 60 * 1000,
 };
 
 const FPRINT_COOKIE_NAME = 'fprint';
 const FPRINT_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: true,
-    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production' || COOKIE_SAMESITE === 'none',
+    sameSite: COOKIE_SAMESITE,
     maxAge: 15 * 24 * 60 * 60 * 1000,
 };
 
@@ -31,15 +33,16 @@ function sendTokens(res, accessToken, refreshToken, fprint) {
  * @description clears refreshToken and fprint cookies
  */
 function clearRefreshCookie(res) {
+    const secure = process.env.NODE_ENV === 'production' || COOKIE_SAMESITE === 'none';
     res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure,
+        sameSite: COOKIE_SAMESITE,
     });
     res.clearCookie(FPRINT_COOKIE_NAME, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
+        secure,
+        sameSite: COOKIE_SAMESITE,
     });
 }
 
@@ -82,6 +85,8 @@ class AuthController {
 
             const tokens = sendTokens(res, accessToken, refreshToken, fprint);
 
+            systemLog.write('user:register', { username, email }, user._id, req.ip);
+
             return res.status(201).json({
                 status: 'ok',
                 data: {
@@ -111,6 +116,8 @@ class AuthController {
             const { accessToken, refreshToken, fprint, ...rest } = await AuthService.login(dto);
 
             const tokens = sendTokens(res, accessToken, refreshToken, fprint);
+
+            systemLog.write('user:login', { username }, rest.user_id || rest.user?._id, req.ip);
 
             return res.status(200).json({
                 status: 'ok',
@@ -176,8 +183,11 @@ class AuthController {
             const result = await AuthService.exchangeRefreshToken(refreshToken);
 
             if (!result) {
-                clearRefreshCookie(res);
-                throw ApiError.Forbidden('refresh token invalid or expired', 'ERR_REFR_INV', null);
+                return res.status(403).json({
+                    status: 'error',
+                    code: 'ERR_REFR_INV',
+                    message: 'refresh token invalid or expired'
+                });
             }
 
             const tokens = sendTokens(res, result.accessToken, result.refreshToken, result.fprint);
@@ -204,17 +214,22 @@ class AuthController {
      */
     async googleOAuthCallback(req, res, next) {
         try {
-            const { accessToken, refreshToken, user_id, profile } = req.user;
+            console.log('[OAuth] callback reached, req.user:', req.user ? Object.keys(req.user) : 'null');
+            const { accessToken, refreshToken, fprint, user_id, profile, user } = req.user;
+
+            systemLog.write('user:oauth', { isNew: !profile.isComplete }, user_id, req.ip);
+
+            const role = user?.role || profile?.role || 'User';
+            const query = `token=${accessToken}&uid=${user_id}&role=${role}`;
 
             if (!profile.isComplete) {
                 res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
-                return res.redirect(
-                    `${process.env.CLIENT_URL}/complete-profile?token=${accessToken}&uid=${user_id}`
-                );
+                res.cookie(FPRINT_COOKIE_NAME, fprint, FPRINT_COOKIE_OPTIONS);
+                return res.redirect(`${process.env.CLIENT_URL}/complete-profile?${query}&complete=0`);
             }
 
-            sendTokens(res, accessToken, refreshToken);
-            return res.redirect(`${process.env.CLIENT_URL}/auth/success?token=${accessToken}`);
+            sendTokens(res, accessToken, refreshToken, fprint);
+            return res.redirect(`${process.env.CLIENT_URL}/auth/success?${query}&complete=1`);
         } catch (e) {
             next(e);
         }
@@ -227,14 +242,14 @@ class AuthController {
     async completeOAuthProfile(req, res, next) {
         try {
             const userid = req.headers['x-user-id'] ?? req.body.userid;
-            const { username, bio, location, avatar } = req.body ?? {}
+            const { username, displayName, bio, location, avatar } = req.body ?? {}
 
             if (!userid || !username) {
                 throw ApiError.BadRequest('missing required fields', 'ERR_FIELDS_MISSING', { userid, username });
             }
 
             const profile = await AuthService.completeOAuthRegistration(userid, {
-                username, bio, location, avatar
+                username, displayName, bio, location, avatar
             });
 
             return res.status(200).json({

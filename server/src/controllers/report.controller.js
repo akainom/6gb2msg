@@ -4,6 +4,7 @@ const { getUserId } = require('../mw/request');
 const { ProfileRepo } = require('../repos/profile.repo');
 const userRepo = require('../repos/user.repo');
 const reportRepo = require('../repos/report.repo');
+const systemLog = require('../services/systemLog.service');
 
 class ReportController {
     async create(req, res, next) {
@@ -17,6 +18,8 @@ class ReportController {
                 description,
                 message_ids,
             });
+
+            systemLog.write('report:create', { reported_id, reason }, userId, req.ip);
 
             return res.status(201).json({ status: 'ok', data: report });
         } catch (e) {
@@ -71,16 +74,23 @@ class ReportController {
     }
 
     async dismiss(req, res, next) {
-        const adminId = await getUserId(req);
-        const admin = await userRepo.getById(adminId);
+        try {
+            const adminId = getUserId(req);
+            const admin = await userRepo.getById(adminId);
 
-        if (!admin || admin.role !== 'Admin') {
-            throw ApiError.Forbidden('admin only', 'ERR_ADMIN', null);
+            if (!admin || admin.role !== 'Admin') {
+                throw ApiError.Forbidden('admin only', 'ERR_ADMIN', null);
+            }
+
+            const { reportId } = req.params;
+            const dismissed = await ReportService.dismissReport(adminId, reportId);
+
+            systemLog.write('report:dismiss', { reportId }, adminId, req.ip);
+
+            return res.status(200).json({ status: 'ok', data: dismissed });
+        } catch (e) {
+            next(e);
         }
-
-        const dismissed = await ReportService.dismissReport(adminId, reportId);
-
-        return res.status(200).json({ status: 'ok', dismissed: dismissed });
     }
 
     async ban(req, res, next) {
@@ -92,7 +102,9 @@ class ReportController {
                 throw ApiError.BadRequest('user_id required', 'ERR_FIELDS_MISSING', null);
             }
 
-            const result = await ReportService.banUser(adminId, user_id, report_id, reason, unbanDate);
+            const result = await ReportService.banUser(adminId, report_id, user_id, reason, unbanDate);
+
+            systemLog.write('report:ban', { user_id, reason, report_id }, adminId, req.ip);
 
             return res.status(200).json({ status: 'ok', data: result });
         } catch (e) {

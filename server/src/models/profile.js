@@ -15,6 +15,11 @@ const ProfileSchema = new Schema({
         trim: true,
         minLength: 5
     },
+    displayName: {
+        type: String,
+        maxLength: 128,
+        default: ''
+    },
     avatar: {
         type: String,
         default: 'transparent.png'
@@ -31,8 +36,8 @@ const ProfileSchema = new Schema({
     status: {
         type: String,
         enum: ['online', 'offline', 'do not disturb', 'away'],
-        set: v => v === '' ? 'offline' : v,
-        default: 'offline' 
+        set: v => v === '' ? 'online' : v,
+        default: 'online' 
     },
     last_online: {
         type: Date,
@@ -63,3 +68,4 @@ ProfileSchema.methods.getUser = async function(session = null) {
 const Profile = mongoose.model('Profile', ProfileSchema);
 
 module.exports = Profile;
+

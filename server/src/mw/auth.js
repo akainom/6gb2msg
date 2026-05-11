@@ -7,7 +7,12 @@ const Encryptor = require('../services/enc.service');
 const publicPaths = [
     '/auth/register',
     '/auth/login',
-    '/auth/refresh'
+    '/auth/refresh',
+    '/auth/oauth',
+    '/files/avatar',
+    '/files/chat-avatar',
+    '/files/attachment',
+    '/stats'
 ];
 
 function isPublicPath(path) {
@@ -16,6 +21,14 @@ function isPublicPath(path) {
 
 const authMiddleware = async (req, res, next) => {
     if (isPublicPath(req.path)) {
+        try {
+            const authHeader = req.headers['authorization'];
+            if (authHeader?.startsWith('Bearer ')) {
+                const accessToken = authHeader.slice(7);
+                const decoded = TokenService.verifyAccessToken(accessToken);
+                req.headers['x-user-id'] = decoded.userid;
+            }
+        } catch {}
         return next();
     }
 
@@ -63,16 +76,27 @@ const authMiddleware = async (req, res, next) => {
             }
         }
 
-        const isValidFprint = Encryptor.compareFprint(fprint, claim);
-        if (!isValidFprint) {
-            return res.status(401).json({
-                code: 'ERR_FPRINT_INV',
-                message: 'fingerprint is not valid',
-                action: 'relogin'
-            });
-        }        
+        if (fprint) {
+            const isValidFprint = Encryptor.compareFprint(fprint, claim);
+            if (!isValidFprint) {
+                return res.status(401).json({
+                    code: 'ERR_FPRINT_INV',
+                    message: 'fingerprint is not valid',
+                    action: 'relogin'
+                });
+            }
+        }
 
         const profile = await ProfileRepo.getByUserId(userId);
+
+        if (profile && !profile.isComplete) {
+            return res.status(403).json({
+                code: 'ERR_PROFILE_INCOMPLETE',
+                message: 'Profile registration is not complete',
+                action: 'complete_profile',
+                details: { user_id: userId }
+            });
+        }
 
         als.run(new Map(), () => {
             const store = als.getStore();

@@ -1,6 +1,7 @@
 const ProfileService = require('../services/profile.service');
 const { ApiError } = require('../mw/exception');
-const { getUserId } = require('../mw/request');
+const { getUserId, getProfileId } = require('../mw/request');
+const systemLog = require('../services/systemLog.service');
 
 class ProfileController {
 
@@ -26,7 +27,11 @@ class ProfileController {
      */
     async getOne(req, res, next) {
         try {
-            const { profileId } = req.params;
+            let { profileId } = req.params;
+
+            if (profileId === 'me') {
+                profileId = getProfileId(req);
+            }
 
             const profile = await ProfileService.getById(profileId);
 
@@ -58,11 +63,25 @@ class ProfileController {
     async update(req, res, next) {
         try {
             const userId = getUserId(req);
-            const { username, bio, location, avatar, status } = req.body;
+            const { username, displayName, bio, location, avatar, status } = req.body;
 
             const profile = await ProfileService.updateProfile(userId, {
-                username, bio, location, avatar, status
+                username, displayName, bio, location, avatar, status
             });
+
+            systemLog.write('profile:update', { fields: Object.keys(req.body).filter(k => req.body[k] !== undefined) }, userId, req.ip);
+
+            if (status !== undefined) {
+                const io = req.app.get('io');
+                if (io) {
+                    const chatRepo = require('../repos/chat.repo');
+                    const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
+                    const roomIds = chats.map(c => `chat:${c._id}`);
+                    for (const roomId of roomIds) {
+                        io.to(roomId).emit('user:status', { userId: String(userId), status });
+                    }
+                }
+            }
 
             return res.status(200).json({ status: 'ok', data: profile });
         } catch (e) {

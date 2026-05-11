@@ -1,6 +1,6 @@
 const dotenv = require('dotenv');
 dotenv.config({
-    path: __dirname + '/tests/server.test.env'
+    path: __dirname + '/.env'
 })
 
 const app = require('./app');
@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
         const server = app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
-        initSocket(server);
+        initSocket(server, app);
     } catch (e) {
         console.error(`Startup failed: ${e.message}`);
         process.exit(1);

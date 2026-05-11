@@ -47,6 +47,9 @@ router.get('/:chatId/messages/unread', MessageController.unreadCount.bind(Messag
 // POST /chats/:chatid/messages/read
 router.post('/:chatId/messages/read', MessageController.markAllRead.bind(MessageController));
 
+// POST /chats/:chatid/messages/forward-batch
+router.post('/:chatId/messages/forward-batch', MessageController.forwardBatch.bind(MessageController));
+
 // PATCH /chats/:chatid/messages/:messageid
 router.patch('/:chatId/messages/:messageId', MessageController.edit.bind(MessageController));
 

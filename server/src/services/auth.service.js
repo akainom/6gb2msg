@@ -6,6 +6,9 @@ const UserRepo = require('../repos/user.repo');
 const mongoose = require('mongoose');
 const profileRepo = require('../repos/profile.repo');
 const Encryptor = require('./enc.service');
+const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
 
 class loginDTO {
     /**
@@ -54,14 +57,16 @@ class AuthService {
      * @param {mongoose.ObjectId} userid 
      * @returns {Promise<Object>} accessToken and refreshToken
      */
-    async genTokens(userid) {
-        const { fprint, claim } = Encryptor.getFprint();
+    async genTokens(userid, existingFprint = null) {
+        const { fprint, claim } = existingFprint 
+            ? { fprint: existingFprint, claim: Encryptor.hash(existingFprint) }
+            : Encryptor.getFprint();
 
-        const accessToken = TokenService.genAccesToken(userid, null, claim); 
+const accessToken = TokenService.genAccesToken(userid, null, claim); 
         let refreshToken = await UserRepo.getFreshToken(userid);
 
         if (!refreshToken) {
-            refreshToken = TokenService.genRefreshToken(userid);
+            refreshToken = TokenService.genRefreshToken(userid, fprint);
             await TokenService.saveRefreshToken(userid, refreshToken);
         }
 
@@ -84,7 +89,8 @@ class AuthService {
             if (!isValid) return null;
             await TokenService.removeToken(userid, refreshToken);
 
-            return await this.genTokens(userid);
+            const oldFprint = decoded.fprint;
+            return await this.genTokens(userid, oldFprint);
         } catch (e) {
             if (e.code) return false; 
             throw ApiError.BadRequest('exchange failed', 'ERR_EXC_FAIL', { userid, refreshToken });
@@ -172,38 +178,79 @@ class AuthService {
         }
     }
 
-    async authenticateOAuthGoogle(data, _avatar, refreshToken) {
+    async authenticateOAuthGoogle(data, _avatar, _displayName, refreshToken) {
         const email = data.emailAddresses[0].value;
         const authProvider = 'google';
-        const avatar = _avatar;
+        const avatarUrl = _avatar;
+        const displayName = _displayName || '';
         const role = 'User';    
         const ssoId = data.metadata.sources[0].id;
+
+        console.log('[OAuth] Google callback, email:', email, 'ssoId:', ssoId, 'displayName:', displayName);
 
         let isNewUser = true;
         let profile = {};
         let user = await UserRepo.getBySSO(ssoId);
+        console.log('[OAuth] getBySSO result:', user ? user._id : 'null');
         if (!user) {
             user = await UserRepo.getByEmailHash(Encryptor.hashEmail(email));
+            console.log('[OAuth] getByEmailHash result:', user ? user._id : 'null');
             isNewUser = user ? false : true;
         } else {
             isNewUser = false;
         }
 
+        console.log('[OAuth] isNewUser:', isNewUser);
+
         if (isNewUser) {
             const tempUsername = `user_${Encryptor.genRandomizedString()}`;
-            let regData = new regDTO(email, null, tempUsername, 'google', avatar);
+            let regData = new regDTO(email, null, tempUsername, 'google', avatarUrl);
             regData = await Encryptor.encryptDTODefault(regData);
-            const {newProfile, newUser} = await ProfileRepo.createWithUser(new ProfileDTO({ ...regData, isComplete: false, ssoId: ssoId }));
+            console.log('[OAuth] creating user with username:', tempUsername);
+            const dto = new ProfileDTO({ ...regData, isComplete: false, ssoId: ssoId, displayName });
+            const {newProfile, newUser} = await ProfileRepo.createWithUser(dto);
             user = newUser;
             profile = newProfile;
+            console.log('[OAuth] created user:', user._id, 'profile:', profile._id);
+
+            const updates = {};
+            if (displayName) updates.displayName = displayName;
+
+            if (avatarUrl) {
+                try {
+                    console.log('[OAuth] downloading Google avatar...');
+                    const imgResponse = await fetch(avatarUrl);
+                    if (imgResponse.ok) {
+                        const buffer = Buffer.from(await imgResponse.arrayBuffer());
+                        const avatarDir = process.env.PROFILE_AVATAR_DIR || '/uploads/avatars';
+                        const profileDir = path.join(avatarDir, String(profile._id));
+                        await fs.promises.mkdir(profileDir, { recursive: true });
+                        const filename = `${profile._id}.webp`;
+                        const filepath = path.join(profileDir, filename);
+                        await sharp(buffer).resize(512, 512, { fit: 'cover' }).webp().toFile(filepath);
+                        updates.avatar = `${profile._id}/${filename}`;
+                        console.log('[OAuth] avatar saved:', updates.avatar);
+                    }
+                } catch (e) {
+                    console.error('[OAuth] avatar download failed:', e.message);
+                }
+            }
+
+            if (Object.keys(updates).length > 0) {
+                const updated = await ProfileRepo.model.findByIdAndUpdate(profile._id, { $set: updates }, { new: true }).lean();
+                profile = updated;
+            }
         } else {
             profile = await ProfileRepo.getByUserId(user._id);
+            console.log('[OAuth] existing profile isComplete:', profile?.isComplete);
         }
 
         const tokens = await this.genTokens(user._id);
+        console.log('[OAuth] tokens generated, redirecting...');
         return {
             ...tokens,
             user_id: user._id,
+            user,
             profile,
         }
     }

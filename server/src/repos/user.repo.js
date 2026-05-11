@@ -170,7 +170,7 @@ class UserRepo extends Base {
                 $set: { 
                     isBanned: false, 
                     banReason: null, 
-                    bannedDue: null 
+                    bannedUntil: null 
                 } 
             },
             { new: true, session }

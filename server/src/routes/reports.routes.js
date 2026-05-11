@@ -14,4 +14,6 @@ router.post('/ban', ReportController.ban.bind(ReportController));
 
 router.post('/unban', ReportController.unban.bind(ReportController));
 
+router.patch('/:reportId/dismiss', ReportController.dismiss.bind(ReportController));
+
 module.exports = router;

@@ -21,6 +21,7 @@ class ProfileDTO {
         this.user.createdAt = new Date();
 
         this.username = data.username ?? '';
+        this.displayName = data.displayName ?? '';
         this.avatar = '';
         this.bio = data.bio ?? '';
         this.location = data.location ?? '';
@@ -136,6 +137,7 @@ class ProfileRepo extends Base {
         const [profile] = await this.model.create([{
             user_id: userId,
             username: dto.username,
+            displayName: dto.displayName,
             avatar: dto.avatar,
             bio: dto.bio,
             location: dto.location,
@@ -209,7 +211,7 @@ class ProfileRepo extends Base {
      * @returns {Promise<Object>} updated profile (plain)
      */
     async finalizeProfile(userId, data) {
-        const { username, bio, location, avatar } = data;
+        const { username, bio, location, avatar, displayName } = data;
 
         const profile = await this.getByUserId(userId);
         
@@ -229,6 +231,7 @@ class ProfileRepo extends Base {
         if (bio !== undefined) $set.bio = bio;
         if (location !== undefined) $set.location = location;
         if (avatar !== undefined) $set.avatar = avatar;
+        if (displayName !== undefined) $set.displayName = displayName;
 
         return await this.model.findByIdAndUpdate(
             profile._id,

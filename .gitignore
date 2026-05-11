@@ -146,4 +146,3 @@ uploads/
 *.jpeg
 client/
 server/src/tests/server.test.env
-web/

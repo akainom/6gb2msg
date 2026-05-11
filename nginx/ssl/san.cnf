@@ -1,0 +1,19 @@
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = 6gb2msg.com
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = 6gb2msg.com
+DNS.2 = www.6gb2msg.com
+IP.1 = 192.168.100.7
+IP.2 = 10.116.117.43
+IP.3 = 127.0.0.1

@@ -2,6 +2,7 @@ function mapProfile(doc) {
     return {
         user_id: String(doc.user_id),
         username: doc.username ?? '',
+        displayName: doc.displayName ?? '',
         bio: doc.bio ?? '',
         location: doc.location ?? '',
         status: doc.status ?? 'offline',

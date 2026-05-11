@@ -10,6 +10,12 @@ router.post(
 );
 
 router.post(
+    '/chat-avatar/:chatId',
+    upload.single('avatar'),
+    FileController.uploadChatAvatar
+);
+
+router.post(
     '/attachment/:chatId',
     upload.array('files', 10),
     FileController.uploadAttachment
@@ -18,6 +24,11 @@ router.post(
 router.get(
     '/avatar/:profileId',
     FileController.getAvatar
+);
+
+router.get(
+    '/chat-avatar/:chatId',
+    FileController.getChatAvatar
 );
 
 router.get(

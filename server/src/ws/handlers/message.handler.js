@@ -103,7 +103,11 @@ function registerMessageHandlers(io, socket) {
                 return ack?.({ error: 'ERR_CHAT_FORB', message: 'not a participant' });
             }
 
-            await socket.join(`chat:${chatId}`);
+            const room = `chat:${chatId}`;
+            await socket.join(room);
+            if (socket._joinedRooms && !socket._joinedRooms.includes(room)) {
+                socket._joinedRooms.push(room);
+            }
             ack?.({ ok: true });
         } catch (e) {
             ack?.({ error: e.code ?? 'ERR_CHAT_JOIN', message: e.message });
@@ -115,7 +119,11 @@ function registerMessageHandlers(io, socket) {
             const { chatId } = payload ?? {};
             if (!chatId) return ack?.({ error: 'ERR_FIELDS_MISSING' });
 
-            await socket.leave(`chat:${chatId}`);
+            const room = `chat:${chatId}`;
+            await socket.leave(room);
+            if (socket._joinedRooms) {
+                socket._joinedRooms = socket._joinedRooms.filter(r => r !== room);
+            }
             ack?.({ ok: true });
         } catch (e) {
             ack?.({ error: e.code ?? 'ERR_CHAT_LEAVE', message: e.message });

@@ -14,7 +14,7 @@ class MessageRepo extends Base {
 
     async getByChat(chatId, opt = { limit: 30, skip: 0 }, session = null) {
         return this.model.find({ chat_id: chatId })
-            .sort({ createdAt: -1 })
+            .sort({ createdAt: 1 })
             .limit(opt.limit)
             .skip(opt.skip)
             .session(session)
@@ -42,6 +42,13 @@ class MessageRepo extends Base {
         }
 
         return msg;
+    }
+
+    async getByIds(ids, session = null) {
+        return this.model.find({ _id: { $in: ids } })
+            .sort({ createdAt: -1 })
+            .session(session)
+            .lean();
     }
 
     async forwardMessage(chatId, message, fromId, session = null) {

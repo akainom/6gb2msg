@@ -1,6 +1,8 @@
 const MessageService = require('../services/message.service');
+const messageRepo = require('../repos/message.repo');
 const { ApiError } = require('../mw/exception');
 const { getUserId } = require('../mw/request');
+const systemLog = require('../services/systemLog.service');
 
 class MessageController {
 
@@ -57,6 +59,17 @@ class MessageController {
             }
 
             const message = await MessageService.sendMessage(userId, chatId, { content, attachments });
+
+            const io = req.app.get('io');
+            if (io) {
+                const room = `chat:${chatId}`;
+                const sockets = await io.in(room).fetchSockets();
+                for (const socket of sockets) {
+                    if (String(socket.data?.userId) !== String(userId)) {
+                        socket.emit('message:new', { message });
+                    }
+                }
+            }
 
             return res.status(201).json({ status: 'ok', data: message });
         } catch (e) {
@@ -118,7 +131,43 @@ class MessageController {
 
             const message = await MessageService.forwardMessage(targetChatId, messageId, userId);
 
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${targetChatId}`).emit('message:new', { message });
+            }
+
             return res.status(201).json({ status: 'ok', data: message });
+        } catch (e) {
+            next(e);
+        }
+    }
+
+    async forwardBatch(req, res, next) {
+        try {
+            const userId = getUserId(req);
+            const { chatId } = req.params;
+            const { messageIds, targetChatId } = req.body ?? {}
+
+            if (!targetChatId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+                throw ApiError.BadRequest('targetChatId and messageIds[] required', 'ERR_FIELDS_MISSING', null);
+            }
+
+            const messages = await MessageService.forwardMessages(targetChatId, messageIds, userId);
+
+            const io = req.app.get('io');
+            if (io) {
+                const room = `chat:${targetChatId}`;
+                const sockets = await io.in(room).fetchSockets();
+                for (const socket of sockets) {
+                    if (String(socket.data?.userId) !== String(userId)) {
+                        for (const msg of messages) {
+                            socket.emit('message:new', { message: msg });
+                        }
+                    }
+                }
+            }
+
+            return res.status(201).json({ status: 'ok', data: messages });
         } catch (e) {
             next(e);
         }
@@ -152,6 +201,19 @@ class MessageController {
             const count = await MessageService.unreadCount(userId, chatId);
 
             return res.status(200).json({ status: 'ok', data: { unread: count } });
+        } catch (e) {
+            next(e);
+        }
+    }
+
+    async getByIds(req, res, next) {
+        try {
+            const ids = String(req.query.ids ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+            if (ids.length === 0) {
+                throw ApiError.BadRequest('ids query param required', 'ERR_FIELDS_MISSING', null);
+            }
+            const messages = await messageRepo.getByIds(ids);
+            return res.status(200).json({ status: 'ok', data: messages });
         } catch (e) {
             next(e);
         }

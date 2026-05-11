@@ -69,6 +69,9 @@ class ReportService {
     }
 
     async dismissReport(adminId, reportId) {
+        const adminUser = await userRepo.getById(adminId);
+        const adminProfile = await ProfileRepo.getByUserId(adminId);
+
         if (!adminProfile || adminUser.role !== 'Admin') {
             throw ApiError.Forbidden('admin only', 'ERR_ADMIN', null);
         }
@@ -100,19 +103,20 @@ class ReportService {
         const bannedUser = await userRepo.transactCall(
             async (self, bag, session) => {
                 const banned = await self.banUser(targetProfile.user_id, reason, unbanDate, session);
-                await bag.reportRepo.updateStatus(reportId, 'resolved', session);
-                
+                if (bag.reportId) {
+                    await bag.reportRepo.updateStatus(bag.reportId, 'resolved', session);
+                }
                 return banned;
             },
-            { reportRepo },
+            { reportRepo, reportId },
             { message: 'unable to ban user', code: 'ERR_USR_BAN', val: { reportId: reportId, targetId: userIdToBan } }
         );
         return bannedUser;
     }
 
     async unbanUser(adminId, userIdToUnban) {
-        const adminProfile = await ProfileRepo.getByUserId(adminId);
-        if (!adminProfile || adminProfile.role !== 'Admin') {
+        const adminUser = await userRepo.getById(adminId);
+        if (!adminUser || adminUser.role !== 'Admin') {
             throw ApiError.Forbidden('admin only', 'ERR_ADMIN', null);
         }
 

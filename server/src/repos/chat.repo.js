@@ -28,7 +28,7 @@ class ChatRepo extends Base {
         }).lean();
     }
 
-    async createPrivate(userIdA, userIdB, session = null) {
+    async createPrivate(userIdA, userIdB, titleOverride = null, session = null) {
         const existing = await this.getPrivate(userIdA, userIdB);
         if (existing) {
             throw ApiError.BadRequest('private chat already exists', 'ERR_CHAT_EX', { userIdA, userIdB });
@@ -36,7 +36,7 @@ class ChatRepo extends Base {
 
         const chat = await this.create({
             type: 'private',
-            title: 'Private',
+            title: titleOverride || 'Private',
             participants: [
                 { user_id: userIdA, role: 'member' },
                 { user_id: userIdB, role: 'member' }

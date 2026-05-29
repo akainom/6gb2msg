@@ -4,6 +4,9 @@ const { ProfileRepo } = require('../repos/profile.repo');
 const UserRepo = require('../repos/user.repo');
 const Encryptor = require('../services/enc.service');
 
+/**
+ * @type {string[]}
+ */
 const publicPaths = [
     '/auth/register',
     '/auth/login',
@@ -15,10 +18,22 @@ const publicPaths = [
     '/stats'
 ];
 
+/**
+ * @description Checks if the given path matches any publicly accessible endpoint
+ * @param {string} path
+ * @returns {boolean}
+ */
 function isPublicPath(path) {
     return publicPaths.some(p => path.startsWith(p));
 }
 
+/**
+ * @description Express middleware for JWT authentication with ban/fingerprint/profile checks
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {Promise<void>}
+ */
 const authMiddleware = async (req, res, next) => {
     if (isPublicPath(req.path)) {
         try {
@@ -90,12 +105,17 @@ const authMiddleware = async (req, res, next) => {
         const profile = await ProfileRepo.getByUserId(userId);
 
         if (profile && !profile.isComplete) {
-            return res.status(403).json({
-                code: 'ERR_PROFILE_INCOMPLETE',
-                message: 'Profile registration is not complete',
-                action: 'complete_profile',
-                details: { user_id: userId }
-            });
+            if (req.path.startsWith('/profiles/by-user/')
+                || req.path.startsWith('/auth/oauth/complete')) {
+                // Allow access to own profile and OAuth completion
+            } else {
+                return res.status(403).json({
+                    code: 'ERR_PROFILE_INCOMPLETE',
+                    message: 'Profile registration is not complete',
+                    action: 'complete_profile',
+                    details: { user_id: userId }
+                });
+            }
         }
 
         als.run(new Map(), () => {

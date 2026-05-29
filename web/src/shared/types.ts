@@ -69,6 +69,7 @@ export type Chat = {
     status?: string;
     last_online?: string;
   } | null;
+  pinned?: { message_id: Id; text?: string; pinned_by?: Id; pinned_at?: string } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -92,6 +93,8 @@ export type Message = {
     is_read?: boolean;
     read_at?: string | null;
   };
+  reactions?: { reaction: string; user_id: Id; created_at?: string }[];
+  reply_to?: { message_id: Id; content?: string; sender_id: Id } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -117,3 +120,4 @@ export type AppStats = {
   messages: { total: number; last_24h: number; last_week: number };
   computed_at?: string;
 };
+

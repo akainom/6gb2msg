@@ -8,10 +8,20 @@ const { mapMessage } = require('../search/es.mapper');
 const IDX_MESSAGES = process.env.ELASTIC_INDEX_MESSAGES || 'messages_v1';
 
 class MessageRepo extends Base {
+    /**
+     * @param {mongoose.Model} model
+     */
     constructor() {
         super(Message);
     }
 
+    /**
+     * @description fetches messages by chat ID with pagination
+     * @param {mongoose.ObjectId} chatId
+     * @param {{ limit: number, skip: number }} [opt]
+     * @param {mongoose.ClientSession} [session=null]
+     * @returns {Promise<Array>} array of message documents sorted by createdAt ascending
+     */
     async getByChat(chatId, opt = { limit: 30, skip: 0 }, session = null) {
         return this.model.find({ chat_id: chatId })
             .sort({ createdAt: 1 })
@@ -21,14 +31,20 @@ class MessageRepo extends Base {
             .lean();
     }
 
+    /**
+     * @description creates a message and indexes it in Elasticsearch
+     * @param {{ chat_id: mongoose.ObjectId, sender_id: mongoose.ObjectId, content: string, attachments: Array, reply_to?: Object }} data
+     * @param {mongoose.ClientSession} [session=null]
+     * @returns {Promise<Object>} created message document
+     */
     async createMessage(data, session = null) {
-        const { chat_id, sender_id, content, attachments = [] } = data;
+        const { chat_id, sender_id, content, attachments = [], reply_to = null } = data;
 
         if (!content && attachments.length === 0) {
             throw ApiError.BadRequest('message must have content or attachments', 'ERR_MSG_EMPTY', null);
         }
 
-        const msg = await this.create({ chat_id, sender_id, content, attachments }, session);
+        const msg = await this.create({ chat_id, sender_id, content, attachments, reply_to }, session);
 
         try {
             await es.index({
@@ -177,6 +193,23 @@ class MessageRepo extends Base {
             sender_id: { $ne: userId },
             'status.is_read': false
         });
+    }
+
+    async toggleReaction(messageId, userId, reaction) {
+        const pullResult = await this.model.updateOne(
+            { _id: messageId, 'reactions.user_id': userId, 'reactions.reaction': reaction },
+            { $pull: { reactions: { user_id: userId, reaction } } }
+        );
+
+        if (pullResult.modifiedCount === 0) {
+            await this.model.updateOne(
+                { _id: messageId },
+                { $push: { reactions: { user_id: userId, reaction, created_at: new Date() } } }
+            );
+        }
+
+        const updated = await this.model.findById(messageId).select('reactions').lean();
+        return updated?.reactions || [];
     }
 }
 

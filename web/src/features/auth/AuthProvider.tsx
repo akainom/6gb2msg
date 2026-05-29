@@ -43,6 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const userId = payload.user_id ?? payload.user?._id ?? payload.profile?.user_id ?? null;
     setAccessToken(payload.accessToken);
     setUserId(userId);
+    configureAuthRuntime({
+      getAccessToken: () => payload.accessToken,
+      getUserId: () => userId,
+      refresh,
+      clear: clearSession,
+    });
     setState((current) => {
       const nextProfile = payload.profile ?? current.profile;
       const nextUser = payload.user ?? current.user;

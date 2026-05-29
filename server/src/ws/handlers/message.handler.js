@@ -1,5 +1,6 @@
 const MessageService = require('../../services/message.service');
 const chatRepo = require('../../repos/chat.repo');
+const { ProfileRepo } = require('../../repos/profile.repo');
 
 /**
  * @param {import('socket.io').Server} io
@@ -8,9 +9,12 @@ const chatRepo = require('../../repos/chat.repo');
 function registerMessageHandlers(io, socket) {
     const userId = socket.data.userId;
 
+    /**
+     * @description handles message:send event
+     */
     socket.on('message:send', async (payload, ack) => {
         try {
-            const { chatId, content, attachments } = payload ?? {};
+            const { chatId, content, attachments, reply_to = null } = payload ?? {};
 
             if (!chatId) {
                 return ack?.({ error: 'ERR_FIELDS_MISSING', message: 'chatId required' });
@@ -19,7 +23,29 @@ function registerMessageHandlers(io, socket) {
                 return ack?.({ error: 'ERR_MSG_EMPTY', message: 'content or attachments required' });
             }
 
-            const message = await MessageService.sendMessage(userId, chatId, { content, attachments });
+            const message = await MessageService.sendMessage(userId, chatId, { content, attachments, reply_to });
+
+            const chat = await chatRepo.getById(chatId);
+            if (chat) {
+                const creatorProfile = await ProfileRepo.getByUserId(userId);
+                const chatForPeer = {
+                    ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                    peer: creatorProfile ? {
+                        user_id: String(creatorProfile.user_id),
+                        profile_id: String(creatorProfile._id),
+                        username: creatorProfile.username,
+                        displayName: creatorProfile.displayName,
+                        status: creatorProfile.status || 'offline',
+                        last_online: creatorProfile.last_online,
+                    } : null,
+                };
+                const sockets = await io.in(`chat:${chatId}`).fetchSockets();
+                for (const sock of sockets) {
+                    if (String(sock.data?.userId) !== String(userId)) {
+                        sock.emit('chat:new', { chat: chatForPeer });
+                    }
+                }
+            }
 
             io.to(`chat:${chatId}`).emit('message:new', { message });
 
@@ -30,6 +56,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles message:edit event
+     */
     socket.on('message:edit', async (payload, ack) => {
         try {
             const { messageId, content } = payload ?? {};
@@ -49,6 +78,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles message:delete event
+     */
     socket.on('message:delete', async (payload, ack) => {
         try {
             const { messageId } = payload ?? {};
@@ -71,6 +103,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles message:read event
+     */
     socket.on('message:read', async (payload, ack) => {
         try {
             const { chatId } = payload ?? {};
@@ -90,6 +125,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles chat:join event
+     */
     socket.on('chat:join', async (payload, ack) => {
         try {
             const { chatId } = payload ?? {};
@@ -114,6 +152,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles chat:leave event
+     */
     socket.on('chat:leave', async (payload, ack) => {
         try {
             const { chatId } = payload ?? {};
@@ -130,6 +171,9 @@ function registerMessageHandlers(io, socket) {
         }
     });
 
+    /**
+     * @description handles message:forward event
+     */
     socket.on('message:forward', async (payload, ack) => {
         try {
             const { messageId, targetChatId } = payload ?? {};
@@ -139,6 +183,28 @@ function registerMessageHandlers(io, socket) {
             }
 
             const message = await MessageService.forwardMessage(targetChatId, messageId, userId);
+
+            const chat = await chatRepo.getById(targetChatId);
+            if (chat) {
+                const creatorProfile = await ProfileRepo.getByUserId(userId);
+                const chatForPeer = {
+                    ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                    peer: creatorProfile ? {
+                        user_id: String(creatorProfile.user_id),
+                        profile_id: String(creatorProfile._id),
+                        username: creatorProfile.username,
+                        displayName: creatorProfile.displayName,
+                        status: creatorProfile.status || 'offline',
+                        last_online: creatorProfile.last_online,
+                    } : null,
+                };
+                const sockets = await io.in(`chat:${targetChatId}`).fetchSockets();
+                for (const sock of sockets) {
+                    if (String(sock.data?.userId) !== String(userId)) {
+                        sock.emit('chat:new', { chat: chatForPeer });
+                    }
+                }
+            }
 
             io.to(`chat:${targetChatId}`).emit('message:new', { message });
 

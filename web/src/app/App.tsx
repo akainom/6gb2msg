@@ -11,8 +11,8 @@ import { CompleteProfilePage } from '../pages/CompleteProfilePage';
 import { LoginPage } from '../pages/LoginPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { RegisterPage } from '../pages/RegisterPage';
-import { StatsPage } from '../pages/StatsPage';
 import { ReportsPage } from '../pages/ReportsPage';
+import { StatsPage } from '../pages/StatsPage';
 
 function HomePage() {
   const auth = useAuth();

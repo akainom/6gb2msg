@@ -5,12 +5,24 @@ const { ProfileRepo } = require('../repos/profile.repo');
 const userRepo = require('../repos/user.repo');
 const reportRepo = require('../repos/report.repo');
 const systemLog = require('../services/systemLog.service');
+const mongoose = require('mongoose');
+
+function validId(id) {
+    return id && mongoose.Types.ObjectId.isValid(String(id));
+}
 
 class ReportController {
     async create(req, res, next) {
         try {
             const userId = getUserId(req);
             const { reported_id, reason, description, message_ids } = req.body ?? {};
+
+            if (!reported_id || !validId(reported_id)) {
+                throw ApiError.BadRequest('invalid reported_id', 'ERR_FIELDS_INV', null);
+            }
+            if (!reason) {
+                throw ApiError.BadRequest('reason required', 'ERR_FIELDS_MISSING', null);
+            }
 
             const report = await ReportService.createReport(userId, {
                 reported_id,
@@ -98,8 +110,17 @@ class ReportController {
             const adminId = getUserId(req);
             const { user_id, report_id, reason, unbanDate } = req.body ?? {};
 
-            if (!user_id) {
-                throw ApiError.BadRequest('user_id required', 'ERR_FIELDS_MISSING', null);
+            if (!user_id || !validId(user_id)) {
+                throw ApiError.BadRequest('invalid user_id', 'ERR_FIELDS_INV', null);
+            }
+
+            if (String(adminId) === String(user_id)) {
+                throw ApiError.BadRequest('cannot ban yourself', 'ERR_SELF', null);
+            }
+
+            const targetUser = await userRepo.model.findById(user_id).select('role').lean();
+            if (targetUser?.role === 'Admin') {
+                throw ApiError.Forbidden('cannot ban another admin', 'ERR_ADMIN', null);
             }
 
             const result = await ReportService.banUser(adminId, report_id, user_id, reason, unbanDate);
@@ -117,8 +138,8 @@ class ReportController {
             const adminId = getUserId(req);
             const { user_id } = req.body ?? {};
 
-            if (!user_id) {
-                throw ApiError.BadRequest('user_id required', 'ERR_FIELDS_MISSING', null);
+            if (!user_id || !validId(user_id)) {
+                throw ApiError.BadRequest('invalid user_id', 'ERR_FIELDS_INV', null);
             }
 
             const result = await ReportService.unbanUser(adminId, user_id);

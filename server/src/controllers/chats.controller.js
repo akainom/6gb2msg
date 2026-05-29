@@ -1,4 +1,5 @@
 const ChatService = require('../services/chat.service');
+const { ProfileRepo } = require('../repos/profile.repo');
 const { ApiError } = require('../mw/exception');
 const { getUserId } = require('../mw/request');
 const systemLog = require('../services/systemLog.service');
@@ -75,10 +76,22 @@ class ChatController {
 
             const io = req.app.get('io');
             if (io) {
+                const creatorProfile = await ProfileRepo.getByUserId(userId);
+                const peerChat = {
+                    ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                    peer: creatorProfile ? {
+                        user_id: String(creatorProfile.user_id),
+                        profile_id: String(creatorProfile._id),
+                        username: creatorProfile.username,
+                        displayName: creatorProfile.displayName,
+                        status: creatorProfile.status || 'offline',
+                        last_online: creatorProfile.last_online,
+                    } : null,
+                };
                 for (const [id, socket] of io.sockets.sockets) {
                     const sockUserId = socket.data?.userId;
                     if (sockUserId && String(sockUserId) !== String(userId) && String(sockUserId) === String(peerId)) {
-                        socket.emit('chat:new', { chat });
+                        socket.emit('chat:new', { chat: peerChat });
                     }
                 }
             }
@@ -140,6 +153,16 @@ class ChatController {
 
             const chat = await ChatService.addMember(actorId, chatId, userId);
 
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${chatId}`).emit('chat:updated', { chat });
+                for (const [id, sock] of io.sockets.sockets) {
+                    if (sock.data?.userId && String(sock.data.userId) === String(userId)) {
+                        sock.emit('chat:new', { chat });
+                    }
+                }
+            }
+
             return res.status(200).json({ status: 'ok', data: chat });
         } catch (e) {
             next(e);
@@ -155,6 +178,16 @@ class ChatController {
             const { chatId, userId } = req.params;
 
             const chat = await ChatService.removeMember(actorId, chatId, userId);
+
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${chatId}`).emit('chat:updated', { chat });
+                for (const [id, sock] of io.sockets.sockets) {
+                    if (sock.data?.userId && String(sock.data.userId) === String(userId)) {
+                        sock.emit('chat:deleted', { chatId });
+                    }
+                }
+            }
 
             return res.status(200).json({ status: 'ok', data: chat });
         } catch (e) {
@@ -178,6 +211,11 @@ class ChatController {
 
             const chat = await ChatService.updateGroupMeta(actorId, chatId, { title, avatar });
 
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${chatId}`).emit('chat:updated', { chat });
+            }
+
             return res.status(200).json({ status: 'ok', data: chat });
         } catch (e) {
             next(e);
@@ -195,6 +233,11 @@ class ChatController {
             await ChatService.deleteChat(userId, chatId);
 
             systemLog.write('chat:delete', { chatId }, userId, req.ip);
+
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${chatId}`).emit('chat:deleted', { chatId });
+            }
 
             return res.status(200).json({ status: 'ok' });
         } catch (e) {

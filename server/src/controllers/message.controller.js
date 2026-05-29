@@ -1,5 +1,7 @@
 const MessageService = require('../services/message.service');
 const messageRepo = require('../repos/message.repo');
+const chatRepo = require('../repos/chat.repo');
+const UserRepo = require('../repos/user.repo');
 const { ApiError } = require('../mw/exception');
 const { getUserId } = require('../mw/request');
 const systemLog = require('../services/systemLog.service');
@@ -52,23 +54,41 @@ class MessageController {
         try {
             const userId = getUserId(req);
             const { chatId } = req.params;
-            const { content, attachments } = req.body ?? {}
+            const { content, attachments, reply_to = null } = req.body ?? {}
 
             if (!content && (!attachments || attachments.length === 0)) {
                 throw ApiError.BadRequest('content or attachments required', 'ERR_MSG_EMPTY', null);
             }
 
-            const message = await MessageService.sendMessage(userId, chatId, { content, attachments });
+            const message = await MessageService.sendMessage(userId, chatId, { content, attachments, reply_to });
 
             const io = req.app.get('io');
             if (io) {
-                const room = `chat:${chatId}`;
-                const sockets = await io.in(room).fetchSockets();
-                for (const socket of sockets) {
-                    if (String(socket.data?.userId) !== String(userId)) {
-                        socket.emit('message:new', { message });
+                const chatRepo = require('../repos/chat.repo');
+                const { ProfileRepo } = require('../repos/profile.repo');
+                const chat = await chatRepo.getById(chatId);
+                if (chat) {
+                    const creatorProfile = await ProfileRepo.getByUserId(userId);
+                    const chatForPeer = {
+                        ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                        peer: creatorProfile ? {
+                            user_id: String(creatorProfile.user_id),
+                            profile_id: String(creatorProfile._id),
+                            username: creatorProfile.username,
+                            displayName: creatorProfile.displayName,
+                            status: creatorProfile.status || 'offline',
+                            last_online: creatorProfile.last_online,
+                        } : null,
+                    };
+                    const room = `chat:${chatId}`;
+                    const sockets = await io.in(room).fetchSockets();
+                    for (const sock of sockets) {
+                        if (String(sock.data?.userId) !== String(userId)) {
+                            sock.emit('chat:new', { chat: chatForPeer });
+                        }
                     }
                 }
+                io.to(room).emit('message:new', { message });
             }
 
             return res.status(201).json({ status: 'ok', data: message });
@@ -93,6 +113,11 @@ class MessageController {
 
             const message = await MessageService.editMessage(userId, messageId, content);
 
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${message.chat_id}`).emit('message:edited', { message });
+            }
+
             return res.status(200).json({ status: 'ok', data: message });
         } catch (e) {
             next(e);
@@ -108,6 +133,14 @@ class MessageController {
             const { messageId } = req.params;
 
             const message = await MessageService.deleteMessage(userId, messageId);
+
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`chat:${message.chat_id}`).emit('message:deleted', {
+                    messageId: message._id,
+                    chatId: message.chat_id,
+                });
+            }
 
             return res.status(200).json({ status: 'ok', data: message });
         } catch (e) {
@@ -133,6 +166,30 @@ class MessageController {
 
             const io = req.app.get('io');
             if (io) {
+                const chatRepo = require('../repos/chat.repo');
+                const { ProfileRepo } = require('../repos/profile.repo');
+                const chat = await chatRepo.getById(targetChatId);
+                if (chat) {
+                    const creatorProfile = await ProfileRepo.getByUserId(userId);
+                    const chatForPeer = {
+                        ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                        peer: creatorProfile ? {
+                            user_id: String(creatorProfile.user_id),
+                            profile_id: String(creatorProfile._id),
+                            username: creatorProfile.username,
+                            displayName: creatorProfile.displayName,
+                            status: creatorProfile.status || 'offline',
+                            last_online: creatorProfile.last_online,
+                        } : null,
+                    };
+                    const room = `chat:${targetChatId}`;
+                    const sockets = await io.in(room).fetchSockets();
+                    for (const sock of sockets) {
+                        if (String(sock.data?.userId) !== String(userId)) {
+                            sock.emit('chat:new', { chat: chatForPeer });
+                        }
+                    }
+                }
                 io.to(`chat:${targetChatId}`).emit('message:new', { message });
             }
 
@@ -142,6 +199,10 @@ class MessageController {
         }
     }
 
+    /**
+     * POST /chats/:chatId/messages/forward-batch
+     * body: { messageIds[], targetChatId }
+     */
     async forwardBatch(req, res, next) {
         try {
             const userId = getUserId(req);
@@ -156,12 +217,30 @@ class MessageController {
 
             const io = req.app.get('io');
             if (io) {
-                const room = `chat:${targetChatId}`;
-                const sockets = await io.in(room).fetchSockets();
-                for (const socket of sockets) {
-                    if (String(socket.data?.userId) !== String(userId)) {
-                        for (const msg of messages) {
-                            socket.emit('message:new', { message: msg });
+                const chatRepo = require('../repos/chat.repo');
+                const { ProfileRepo } = require('../repos/profile.repo');
+                const chat = await chatRepo.getById(targetChatId);
+                if (chat) {
+                    const creatorProfile = await ProfileRepo.getByUserId(userId);
+                    const chatForPeer = {
+                        ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                        peer: creatorProfile ? {
+                            user_id: String(creatorProfile.user_id),
+                            profile_id: String(creatorProfile._id),
+                            username: creatorProfile.username,
+                            displayName: creatorProfile.displayName,
+                            status: creatorProfile.status || 'offline',
+                            last_online: creatorProfile.last_online,
+                        } : null,
+                    };
+                    const room = `chat:${targetChatId}`;
+                    const sockets = await io.in(room).fetchSockets();
+                    for (const sock of sockets) {
+                        if (String(sock.data?.userId) !== String(userId)) {
+                            sock.emit('chat:new', { chat: chatForPeer });
+                            for (const msg of messages) {
+                                sock.emit('message:new', { message: msg });
+                            }
                         }
                     }
                 }
@@ -183,6 +262,17 @@ class MessageController {
             const { chatId } = req.params;
 
             const count = await MessageService.markAllRead(userId, chatId);
+
+            const io = req.app.get('io');
+            if (io) {
+                const room = `chat:${chatId}`;
+                const sockets = await io.in(room).fetchSockets();
+                for (const socket of sockets) {
+                    if (String(socket.data?.userId) !== String(userId)) {
+                        socket.emit('message:read', { chatId, userId });
+                    }
+                }
+            }
 
             return res.status(200).json({ status: 'ok', data: { marked: count } });
         } catch (e) {
@@ -206,13 +296,29 @@ class MessageController {
         }
     }
 
+    /**
+     * GET /chats/messages/by-ids?ids=id1,id2,...
+     */
     async getByIds(req, res, next) {
         try {
+            const userId = getUserId(req);
             const ids = String(req.query.ids ?? '').split(',').map((id) => id.trim()).filter(Boolean);
             if (ids.length === 0) {
                 throw ApiError.BadRequest('ids query param required', 'ERR_FIELDS_MISSING', null);
             }
+
+            const user = await UserRepo.model.findById(userId).select('role').lean();
+            const isAdmin = user?.role === 'Admin';
+
             const messages = await messageRepo.getByIds(ids);
+            if (!isAdmin) {
+                for (const msg of messages) {
+                    if (msg.chat_id) {
+                        const ok = await chatRepo.isParticipant(msg.chat_id, userId);
+                        if (!ok) throw ApiError.Forbidden('access denied', 'ERR_CHAT_FORB', msg._id);
+                    }
+                }
+            }
             return res.status(200).json({ status: 'ok', data: messages });
         } catch (e) {
             next(e);

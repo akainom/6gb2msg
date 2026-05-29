@@ -56,16 +56,16 @@ const UserSchema = new Schema ({
         },
         createdAt: {
             type: Date,
-            default: Date.now()
+            default: Date.now
         },
         expiresAt: {
             type: Date,
-            default: Date.now()
+            default: Date.now
         }
     }],
     createdAt: {
         type: Date,
-        default: Date.now()
+        default: Date.now
     }
 }, {
     timestamps: true,

@@ -22,12 +22,17 @@ router.post('/refresh', AuthController.refresh.bind(AuthController));
 
 
 
+// POST /auth/change-password
+router.post('/change-password', AuthController.changePassword.bind(AuthController));
+
 // GET /auth/oauth/google  
 router.get(
     '/oauth/google',
     passport.authenticate('google', {
         scope: ['profile', 'email'],
         session: false,
+        prompt: 'consent',
+        accessType: 'offline',
     })
 );
 

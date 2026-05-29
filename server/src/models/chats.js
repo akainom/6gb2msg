@@ -18,6 +18,13 @@ const ParticipantSchema = new Schema({
     }
 }, { _id: false });
 
+const PinnedSchema = new Schema({
+    message_id: { type: Schema.Types.ObjectId, ref: 'Message' },
+    text:       { type: String },
+    pinned_by:  { type: Schema.Types.ObjectId, ref: 'User' },
+    pinned_at:  { type: Date, default: Date.now }
+}, { _id: false });
+
 const ChatSchema = new Schema({
     type: {
         type: String,
@@ -49,6 +56,11 @@ const ChatSchema = new Schema({
         message_id: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
         text:       { type: String, default: null },
         sent_at:    { type: Date, default: null }
+    },
+    /** NEW: закреплённое сообщение */
+    pinned: {
+        type: PinnedSchema,
+        default: null
     }
 }, {
     timestamps: true,

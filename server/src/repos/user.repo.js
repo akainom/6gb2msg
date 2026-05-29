@@ -14,6 +14,9 @@ class userDTO {
 }
 
 class UserRepo extends Base {
+    /**
+     * @param {mongoose.Model} model
+     */
     constructor() {
         super(User);
     }
@@ -111,7 +114,7 @@ class UserRepo extends Base {
     }
 
     /**
-     * 
+     * @description checks whether a user with the given email already exists
      * @param {string} email 
      * @returns {Promise<Boolean>} true if exists, false otherwise
      */
@@ -121,34 +124,81 @@ class UserRepo extends Base {
         return emailExists ? true : false;
     }
 
+    /**
+     * @description retrieves the user ID for a given email address
+     * @param {string} email 
+     * @returns {Promise<Object|null>} user document with only _id or null
+     */
     async getUserId(email) {
         const userid = await this.model.findOne({ email }).select('_id').lean();
 
         return userid ? userid : null;
     }
 
+    /**
+     * @description fetches a user by their SSO identifier
+     * @param {string} ssoId 
+     * @returns {Promise<Object|null>} plain user object or null
+     */
     async getBySSO(ssoId) {
         const user = await this.model.findOne({ ssoId }).lean();
 
         return user ? user : null;
     }
 
+    /**
+     * @description fetches a user by their hashed email address
+     * @param {string} email 
+     * @returns {Promise<Object|null>} plain user object or null
+     */
     async getByEmailHash(email) {
         const user = await this.model.findOne({ emailHash: email }).lean();
 
         return user ? user : null;
     }
 
+    /**
+     * @description retrieves authentication data (email, password hash, id) for a user
+     * @param {mongoose.ObjectId} userid 
+     * @returns {Promise<Object>} object containing email, passwordHash, and user_id
+     */
     async getAuthData(userid) {
         const user = await this.getById(userid, null, '+password');
 
-        return { email: user.email, passwordHash: user.password, user_id: user._id };
+        return { email: user.email, passwordHash: user.password, user_id: user._id, role: user.role, authProvider: user.authProvider, isBanned: user.isBanned, bannedUntil: user.bannedUntil, banReason: user.banReason };
     }
 
+    /**
+     * @description updates the user's password hash
+     * @param {mongoose.ObjectId} userid 
+     * @param {string} newPasswordHash 
+     * @returns {Promise<void>}
+     */
+    async updatePassword(userid, newPasswordHash) {
+        await this.model.updateOne(
+            { _id: userid },
+            { $set: { password: newPasswordHash } }
+        );
+    }
+
+    /**
+     * @description deletes a user document by ID
+     * @param {mongoose.ObjectId} userid 
+     * @param {mongoose.ClientSession} [session=null]
+     * @returns {Promise<Object|null>} deleted user document or null
+     */
     async deleteUser(userid, session = null) {
         return await this.model.findByIdAndDelete(userid, { session: session });
     }
 
+    /**
+     * @description bans a user by setting ban-related fields
+     * @param {mongoose.ObjectId} userId 
+     * @param {string} reason 
+     * @param {Date} unbanDate 
+     * @param {mongoose.ClientSession} [session=null]
+     * @returns {Promise<Object|null>} updated user document
+     */
     async banUser(userId, reason, unbanDate, session = null) {
         return await this.model.findByIdAndUpdate(
             userId,
@@ -163,6 +213,12 @@ class UserRepo extends Base {
         ).lean();
     }
 
+    /**
+     * @description lifts a ban from a user by clearing ban-related fields
+     * @param {mongoose.ObjectId} userId 
+     * @param {mongoose.ClientSession} [session=null]
+     * @returns {Promise<Object|null>} updated user document
+     */
     async unbanUser(userId, session = null) {
         return await this.model.findByIdAndUpdate(
             userId,

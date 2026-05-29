@@ -14,7 +14,7 @@ export function RegisterPage() {
   return (
     <main className="auth-page">
       <Card className="auth-card">
-        <p className="eyebrow">Create account</p>
+        <p className="eyebrow">Новый аккаунт</p>
         <h1 style={{ marginBottom: '.25rem' }}>Регистрация</h1>
         <p className="text-secondary" style={{ marginBottom: '.5rem' }}>Создайте новый аккаунт</p>
         <form onSubmit={submitForm(async (form) => {
@@ -24,8 +24,8 @@ export function RegisterPage() {
           finally { setPending(false); }
         })}>
           <Field label="Email"><input name="email" type="email" autoComplete="email" required /></Field>
-          <Field label="Username" hint="6-15 символов: латиница, цифры и underscore."><input name="username" autoComplete="username" minLength={6} maxLength={15} required /></Field>
-          <Field label="Password"><input name="password" type="password" autoComplete="new-password" minLength={8} required /></Field>
+          <Field label="Имя пользователя" hint="6-15 символов: латиница, цифры и подчёркивание."><input name="username" autoComplete="username" minLength={6} maxLength={15} required /></Field>
+          <Field label="Пароль"><input name="password" type="password" autoComplete="new-password" minLength={8} required /></Field>
           <ErrorMessage error={error} />
           <button disabled={pending}>{pending ? 'Создаём...' : 'Зарегистрироваться'}</button>
         </form>

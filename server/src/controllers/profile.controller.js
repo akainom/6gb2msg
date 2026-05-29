@@ -71,15 +71,20 @@ class ProfileController {
 
             systemLog.write('profile:update', { fields: Object.keys(req.body).filter(k => req.body[k] !== undefined) }, userId, req.ip);
 
-            if (status !== undefined) {
-                const io = req.app.get('io');
-                if (io) {
-                    const chatRepo = require('../repos/chat.repo');
-                    const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
-                    const roomIds = chats.map(c => `chat:${c._id}`);
-                    for (const roomId of roomIds) {
-                        io.to(roomId).emit('user:status', { userId: String(userId), status });
-                    }
+            const io = req.app.get('io');
+            if (io) {
+                const chatRepo = require('../repos/chat.repo');
+                const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
+                const roomIds = chats.map(c => `chat:${c._id}`);
+                for (const roomId of roomIds) {
+                    io.to(roomId).emit('user:status', {
+                        userId: String(userId),
+                        status: profile.status,
+                        profile_id: String(profile._id),
+                        username: profile.username,
+                        displayName: profile.displayName,
+                        updatedAt: profile.updatedAt,
+                    });
                 }
             }
 
@@ -111,3 +116,4 @@ class ProfileController {
     }
 }
 module.exports = new ProfileController();
+

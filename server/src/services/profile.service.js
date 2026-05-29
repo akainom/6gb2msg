@@ -100,7 +100,12 @@ class ProfileService {
                 $set.status = 'online';
             }
         } else if (requestedStatus === 'offline') {
-            $set.status = 'offline';
+            const profile = await ProfileRepo.getByUserId(userId);
+            if (profile?.status && profile.status !== 'offline') {
+                effectiveStatus = profile.status;
+            } else {
+                $set.status = 'offline';
+            }
         } else {
             const allowed = ['online', 'offline', 'away', 'do not disturb'];
             $set.status = allowed.includes(requestedStatus) ? requestedStatus : 'online';

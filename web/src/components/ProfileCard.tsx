@@ -9,6 +9,13 @@ const statusIcons: Record<string, string> = {
   'do not disturb': '🔴',
 };
 
+const statusLabels: Record<string, string> = {
+  online: 'В сети',
+  offline: 'Не в сети',
+  away: 'Отошёл',
+  'do not disturb': 'Не беспокоить',
+};
+
 export function ProfileCard({
   profile,
   isOwn,
@@ -25,6 +32,7 @@ export function ProfileCard({
   const [avatarKey] = useState(Date.now());
   const initial = (profile.displayName || profile.username || '?')[0].toUpperCase();
   const statusIcon = statusIcons[profile.status ?? 'offline'] || '⚫';
+  const statusLabel = statusLabels[profile.status ?? 'offline'] || profile.status || 'Не в сети';
 
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -37,7 +45,7 @@ export function ProfileCard({
           <div style={{ position: 'relative', width: 80, height: 80 }}>
             <div className="avatar avatar-lg" style={{ display: 'grid', placeItems: 'center', background: 'var(--accent)', color: '#fff' }}>{initial}</div>
             {profile._id && (
-              <img className="avatar avatar-lg" src={`${filesApi.avatarUrl(profile._id)}?v=${avatarKey}`} alt={`${profile.username} avatar`}
+              <img className="avatar avatar-lg" src={`${filesApi.avatarUrl(profile._id)}?v=${avatarKey}`} alt={`Аватар ${profile.username}`}
                 style={{ position: 'absolute', inset: 0, zIndex: 1 }}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             )}
@@ -49,7 +57,7 @@ export function ProfileCard({
           </div>
           {profile.bio && <div className="bio">{profile.bio}</div>}
           <div className="meta">
-            <span>{statusIcon} {profile.status || 'offline'}</span>
+            <span>{statusIcon} {statusLabel}</span>
             {profile.location && <span style={{ marginLeft: '.75rem' }}>📍 {profile.location}</span>}
           </div>
           {!isOwn && (

@@ -231,6 +231,29 @@ class ChatService {
             return await self.deleteChat(chatId, session);
         }, bag, {message: 'unable to delete chat', code: 'ERR_CHAT_DEL', val: chatId});
     }
+
+    async pinMessage(userId, chatId, messageId) {
+        await this.getForUser(userId, chatId);
+
+        const msg = await messageRepo.getById(messageId);
+        if (!msg) {
+            throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
+        }
+
+        const pinnedData = {
+            message_id: messageId,
+            text: (msg.content || '[attachment]').slice(0, 200),
+            pinned_by: userId,
+            pinned_at: new Date(),
+        };
+
+        return chatRepo.setPin(chatId, pinnedData);
+    }
+
+    async unpinMessage(userId, chatId) {
+        await this.getForUser(userId, chatId);
+        return chatRepo.removePin(chatId);
+    }
 }
 
 module.exports = new ChatService();

@@ -42,12 +42,14 @@ class regDTO {
     }
 
     static fromGoogleProfile(data, avatar) {
-        const params = {
-            email: data.emailAddresses[0].value,
+        const email = data?.emailAddresses?.[0]?.value;
+        if (!email) return null;
+        return {
+            email,
             authProvider: 'google',
-            avatar: avatar,
-            role: 'User',    
-        }
+            avatar: avatar ?? '',
+            role: 'User',
+        };
     }
 }
 
@@ -87,12 +89,21 @@ const accessToken = TokenService.genAccesToken(userid, null, claim);
             const userid = decoded.userid;
             const isValid = await TokenService.validateToken(userid, refreshToken);
             if (!isValid) return null;
+
             await TokenService.removeToken(userid, refreshToken);
 
             const oldFprint = decoded.fprint;
-            return await this.genTokens(userid, oldFprint);
+            const { fprint, claim } = oldFprint
+                ? { fprint: oldFprint, claim: Encryptor.hash(oldFprint) }
+                : Encryptor.getFprint();
+
+            const accessToken = TokenService.genAccesToken(userid, null, claim);
+            const newRefreshToken = TokenService.genRefreshToken(userid, fprint);
+            await TokenService.saveRefreshToken(userid, newRefreshToken);
+
+            return { accessToken, refreshToken: newRefreshToken, fprint };
         } catch (e) {
-            if (e.code) return false; 
+            if (e.code) return false;
             throw ApiError.BadRequest('exchange failed', 'ERR_EXC_FAIL', { userid, refreshToken });
         }
     }
@@ -161,7 +172,7 @@ const accessToken = TokenService.genAccesToken(userid, null, claim);
 
             const passwordCorrect = await Encryptor.comparePasswords(data.password, authCtx.user.passwordHash);
             if (!passwordCorrect) {
-                throw ApiError.BadRequest('authentication failed', 'ERR_PASSWD_INC', data.password);
+                throw ApiError.BadRequest('authentication failed', 'ERR_PASSWD_INC', null);
             } else {
                 // success login
                 const tokens = await this.genTokens(authCtx.user_id);
@@ -295,6 +306,26 @@ const accessToken = TokenService.genAccesToken(userid, null, claim);
         } catch (e) {
             throw ApiError.BadRequest(`unable to remove tokens`, `ERR_REFR_ALL_FAIL`, userid);
         }
+    }
+
+    /**
+     * @description changes user's password after verifying the old one
+     * @param {mongoose.ObjectId} userid 
+     * @param {string} oldPassword 
+     * @param {string} newPassword 
+     * @returns {Promise<void>}
+     */
+    async changePassword(userid, oldPassword, newPassword) {
+        const authData = await UserRepo.getAuthData(userid);
+        if (!authData || !authData.passwordHash) {
+            throw ApiError.BadRequest('password change not supported for OAuth accounts', 'ERR_OAUTH_PW', userid);
+        }
+        const ok = await Encryptor.comparePasswords(oldPassword, authData.passwordHash);
+        if (!ok) {
+            throw ApiError.BadRequest('incorrect current password', 'ERR_PASSWD_INC', null);
+        }
+        const newHash = await Encryptor.hashPassword(newPassword);
+        await UserRepo.updatePassword(userid, newHash);
     }
 }
 

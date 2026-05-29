@@ -17,7 +17,7 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <Card className="auth-card">
-        <p className="eyebrow">Welcome back</p>
+        <p className="eyebrow">С возвращением</p>
         <h1 style={{ marginBottom: '.25rem' }}>Вход</h1>
         <p className="text-secondary" style={{ marginBottom: '.5rem' }}>Войдите в свой аккаунт</p>
         <form onSubmit={submitForm(async (form) => {
@@ -26,8 +26,8 @@ export function LoginPage() {
           catch (e) { setError(e); }
           finally { setPending(false); }
         })}>
-          <Field label="Username"><input name="username" autoComplete="username" required /></Field>
-          <Field label="Password"><input name="password" type="password" autoComplete="current-password" required /></Field>
+          <Field label="Имя пользователя"><input name="username" autoComplete="username" required /></Field>
+          <Field label="Пароль"><input name="password" type="password" autoComplete="current-password" required /></Field>
           <ErrorMessage error={error} />
           <button disabled={pending}>{pending ? 'Входим...' : 'Войти'}</button>
         </form>

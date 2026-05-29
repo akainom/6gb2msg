@@ -180,6 +180,11 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    apiRequest<void>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    }),
 };
 
 export async function downloadFile(url: string, filename: string) {

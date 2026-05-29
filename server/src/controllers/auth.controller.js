@@ -46,11 +46,17 @@ function clearRefreshCookie(res) {
     });
 }
 
+/**
+ * @description validates email format using validator library
+ */
 function validateEmail(email) {
     if (!email) return false;
     return validator.isEmail(email);
 }
 
+/**
+ * @description validates password strength (min 8 chars, 1 number by default; symbols/uppercase/lowercase optional)
+ */
 function validatePassword(password) {
     if (!password) return false;
     return validator.isStrongPassword(password, {
@@ -60,6 +66,9 @@ function validatePassword(password) {
                 });
 }
 
+/**
+ * @description validates username: 6–15 chars, alphanumeric and underscore only
+ */
 function validateUsername(username) {
     const len = username.length > 5 && username.length < 16;
     const lang = /^[a-zA-Z0-9_]+$/.test(username);
@@ -77,7 +86,7 @@ class AuthController {
             const { email, password, username } = req.body ?? {}
 
             if (!validateEmail(email) || !validatePassword(password) || !validateUsername(username)) {
-                throw ApiError.BadRequest('invalid fields', 'ERR_FIELDS_INV', { email, password, username });
+                throw ApiError.BadRequest('invalid fields', 'ERR_FIELDS_INV', null);
             }
 
             const dto = new regDTO(email, password, username, 'local');
@@ -220,7 +229,8 @@ class AuthController {
             systemLog.write('user:oauth', { isNew: !profile.isComplete }, user_id, req.ip);
 
             const role = user?.role || profile?.role || 'User';
-            const query = `token=${accessToken}&uid=${user_id}&role=${role}`;
+            const authProvider = user?.authProvider || '';
+            const query = `token=${accessToken}&uid=${user_id}&role=${role}&ap=${authProvider}`;
 
             if (!profile.isComplete) {
                 res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
@@ -256,6 +266,30 @@ class AuthController {
                 status: 'ok',
                 data: { profile }
             });
+        } catch (e) {
+            next(e);
+        }
+    }
+
+    /**
+     * POST /auth/change-password
+     * Body: { oldPassword, newPassword }
+     */
+    async changePassword(req, res, next) {
+        try {
+            const userid = req.headers['x-user-id'] ?? req.body.userid;
+            const { oldPassword, newPassword } = req.body ?? {};
+
+            if (!userid || !oldPassword || !newPassword) {
+                throw ApiError.BadRequest('missing required fields', 'ERR_FIELDS_MISSING', null);
+            }
+            if (newPassword.length < 8) {
+                throw ApiError.BadRequest('new password too short', 'ERR_FIELDS_INV', null);
+            }
+
+            await AuthService.changePassword(userid, oldPassword, newPassword);
+
+            return res.status(200).json({ status: 'ok' });
         } catch (e) {
             next(e);
         }

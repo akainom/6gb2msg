@@ -26,7 +26,7 @@ class ProfileDTO {
         this.bio = data.bio ?? '';
         this.location = data.location ?? '';
         this.status = data.status ?? '';
-        this.last_online = new Date()
+        this.last_online = new Date();
         this.isComplete = data.isComplete ?? false;
     }
 }

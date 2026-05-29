@@ -22,24 +22,23 @@ class MessageService {
         if (!ok) {
             throw ApiError.Forbidden('not a participant', 'ERR_CHAT_FORB', chatId);
         }
-
         return ok;
     }
 
     /**
      * @param {mongoose.Types.ObjectId} senderId
      * @param {mongoose.Types.ObjectId} chatId
-     * @param {{ content?: string, attachments?: Array }} payload
+     * @param {{ content?: string, attachments?: Array, reply_to?: Object }} payload
      */
     async sendMessage(senderId, chatId, payload) {
-        const { content, attachments = [] } = payload;
+        const { content, attachments = [], reply_to = null } = payload;
         await this._requireParticipant(chatId, senderId);
 
         const bag = {}
         bag.chatRepo = chatRepo;
         return await messageRepo.transactCall(async (self, bag, session) => {
             const msg = await self.createMessage(
-                { chat_id: chatId, sender_id: senderId, content, attachments },
+                { chat_id: chatId, sender_id: senderId, content, attachments, reply_to },
                 session
             );
             await bag.chatRepo.updateLastMessage(
@@ -70,117 +69,61 @@ class MessageService {
 
     async searchInChat(chatId, query, userId, opt = {}) {
         await this._requireParticipant(chatId, userId);
-
         const q = (query ?? '').trim();
-        if (!q) {
-            throw ApiError.BadRequest('search query is empty', 'ERR_SEARCH_Q_EMPTY');
-        }
-
-        const limit = Number(opt.limit ?? 20);
-        const skip = Number(opt.skip ?? 0);
-
-        if (limit > 100) limit = 100;
-        if (skip < 0) skip = 0;
-
+        if (!q) throw ApiError.BadRequest('search query is empty', 'ERR_SEARCH_Q_EMPTY');
+        const limit = Math.min(Number(opt.limit ?? 20), 100);
+        const skip = Math.max(Number(opt.skip ?? 0), 0);
         const result = await es.search({
-            index: IDX_MESSAGES,
-            from: skip,
-            size: limit,
-            query: {
-                bool: {
-                    filter: [{ term: { chat_id: String(chatId) } }],
-                    must: [{ match: { content: q } }]
-                }
-            },
+            index: IDX_MESSAGES, from: skip, size: limit,
+            query: { bool: { filter: [{ term: { chat_id: String(chatId) } }], must: [{ match: { content: q } }] } },
         });
-
         return {
             total: result.hits?.total?.value ?? 0,
             messages: result.hits?.hits?.map(hit => ({ _id: hit._id, ...hit._source })) ?? [],
         };
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.Types.ObjectId} messageId
-     * @param {string} newContent
-     */
     async editMessage(userId, messageId, newContent) {
         const msg = await messageRepo.getById(messageId);
         if (!msg) throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
-
         const ok = await messageRepo.isSender(messageId, userId);
-        if (!ok) {
-            throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
-        }
-
+        if (!ok) throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
         const updated = await messageRepo.editMessage(messageId, newContent);
-
         const chat = await chatRepo.getById(msg.chat_id);
         const lastMsgIdStr = String(chat?.last_message?.message_id);
         const messageIdStr = String(messageId);
         const updatedIdStr = String(updated._id);
         if (lastMsgIdStr === messageIdStr || lastMsgIdStr === updatedIdStr) {
             await chatRepo.updateLastMessage(msg.chat_id, {
-                message_id: updated._id,
-                text: previewText(updated.content),
-                sent_at: updated.createdAt,
+                message_id: updated._id, text: previewText(updated.content), sent_at: updated.createdAt,
             });
         }
-
         return updated;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.Types.ObjectId} messageId
-     */
     async deleteMessage(userId, messageId) {
         const msg = await messageRepo.getById(messageId);
         if (!msg) throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
-        
         await this._requireParticipant(msg.chat_id, userId);
         const sender = await messageRepo.isSender(messageId, userId);
         if (!sender) throw ApiError.Forbidden('not the sender', 'ERR_MSG_FORB', messageId);
-
         const chat = await chatRepo.getById(msg.chat_id);
         const isLast = chat.last_message?.message_id == messageId;
-
         const deleted = await messageRepo.deleteMessage(messageId);
-
         if (isLast) {
-            const newLast = await messageRepo.model
-                .findOne({ chat_id: msg.chat_id })
-                .sort({ createdAt: -1 })
-                .lean();
-
+            const newLast = await messageRepo.model.findOne({ chat_id: msg.chat_id }).sort({ createdAt: -1 }).lean();
             await chatRepo.updateLastMessage(msg.chat_id, newLast ? {
-                message_id: newLast._id,
-                text: previewText(newLast.content),
-                sent_at: newLast.createdAt,
-            } : {
-                message_id: null,
-                text: null,
-                sent_at: null,
-            });
+                message_id: newLast._id, text: previewText(newLast.content), sent_at: newLast.createdAt,
+            } : { message_id: null, text: null, sent_at: null });
         }
-
         return deleted;
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.Types.ObjectId} chatId
-     */
     async markAllRead(userId, chatId) {
         await this._requireParticipant(chatId, userId);
         return messageRepo.markAllAsRead(chatId, userId);
     }
 
-    /**
-     * @param {mongoose.Types.ObjectId} userId
-     * @param {mongoose.Types.ObjectId} chatId
-     */
     async unreadCount(userId, chatId) {
         await this._requireParticipant(chatId, userId);
         return messageRepo.getUnreadCount(chatId, userId);
@@ -188,36 +131,36 @@ class MessageService {
 
     async forwardMessage(chatId, messageId, fromId) {
         await this._requireParticipant(chatId, fromId);
-
         const message = await messageRepo.getById(messageId);
         await this._requireParticipant(message.chat_id, fromId);
-        
         return await messageRepo.transactCall(async (self, bag, session) => {
             return await self.forwardMessage(chatId, message, fromId, session);
-        },
-        null,
-        { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
+        }, null, { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
     }
 
     async forwardMessages(chatId, messageIds, fromId) {
         await this._requireParticipant(chatId, fromId);
-
         const results = [];
-
         for (const messageId of messageIds) {
             const message = await messageRepo.getById(messageId);
             await this._requireParticipant(message.chat_id, fromId);
-
             const forwarded = await messageRepo.transactCall(async (self, bag, session) => {
                 return await self.forwardMessage(chatId, message, fromId, session);
-            },
-            null,
-            { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
-
+            }, null, { message: 'unable to forward message', code: 'ERR_MSG_FORW', val: { message, fromId } });
             results.push(forwarded);
         }
-
         return results;
+    }
+
+    async toggleReaction(userId, chatId, messageId, reaction) {
+        await this._requireParticipant(chatId, userId);
+
+        const message = await messageRepo.getById(messageId);
+        if (!message) {
+            throw ApiError.NotFound('message not found', 'ERR_MSG_NF', messageId);
+        }
+
+        return messageRepo.toggleReaction(messageId, userId, reaction);
     }
 }
 

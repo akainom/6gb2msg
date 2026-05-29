@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const ChatController = require('../controllers/chats.controller');
 const MessageController = require('../controllers/message.controller');
+const reactionCtrl = require('../controllers/reaction.controller');
+const pinCtrl = require('../controllers/pin.controller');
 
 // GET /chats/search?q=...&limit=...&skip=...
 router.get('/search', ChatController.search.bind(ChatController));
@@ -30,7 +32,13 @@ router.post('/:chatId/members', ChatController.addMember.bind(ChatController));
 // DELETE /chats/:chatid/members/userid
 router.delete('/:chatId/members/:userId', ChatController.removeMember.bind(ChatController));
 
-// NOTE: static segments (/unread, /read, /search) must come before /:messageId
+// POST /chats/:chatid/pin
+router.post('/:chatId/pin', pinCtrl.pinMessage);
+
+// DELETE /chats/:chatid/pin
+router.delete('/:chatId/pin', pinCtrl.unpinMessage);
+
+// NOTE: static segments (/search, /unread, /read) must come before /:messageId
 
 // GET /chats/:chatid/messages/search?q=...
 router.get('/:chatId/messages/search', MessageController.searchInChat.bind(MessageController));
@@ -49,6 +57,9 @@ router.post('/:chatId/messages/read', MessageController.markAllRead.bind(Message
 
 // POST /chats/:chatid/messages/forward-batch
 router.post('/:chatId/messages/forward-batch', MessageController.forwardBatch.bind(MessageController));
+
+// POST /chats/:chatid/messages/:messageId/react
+router.post('/:chatId/messages/:messageId/react', reactionCtrl.toggleReaction);
 
 // PATCH /chats/:chatid/messages/:messageid
 router.patch('/:chatId/messages/:messageId', MessageController.edit.bind(MessageController));

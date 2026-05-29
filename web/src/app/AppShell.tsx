@@ -22,6 +22,13 @@ export function AppShell() {
     }
   }, [auth.profile]);
 
+  // Dark theme
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ profiles: Profile[]; chats: Chat[] }>({ profiles: [], chats: [] });
   const [searchOpen, setSearchOpen] = useState(false);
@@ -84,7 +91,7 @@ export function AppShell() {
                     {searchResults.chats.map((c) => (
                       <button key={c._id} type="button" className="menu-item"
                         onMouseDown={() => selectChatFromSearch(c._id)}>
-                        💬 {c.title || `${c.type} chat`}
+                        💬 {c.title || `чат ${c.type === 'private' ? '1-на-1' : 'групповой'}`}
                       </button>
                     ))}
                   </>
@@ -103,6 +110,8 @@ export function AppShell() {
               </div>
             )}
           </div>}
+          {!auth.isAdmin && <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            title="Переключить тему">{theme === 'dark' ? '☀️' : '🌙'}</button>}
           <DropdownMenu
             trigger={
               <div className="topbar-user">

@@ -26,7 +26,23 @@ async function uploadAvatar(req, res, next) {
             req.file.mimetype
         );
 
-        await ProfileService.updateProfile(userId, { avatar: relativePath });
+        const updated = await ProfileService.updateProfile(userId, { avatar: relativePath });
+
+        const io = req.app.get('io');
+        if (io) {
+            const chatRepo = require('../repos/chat.repo');
+            const chats = await chatRepo.getByUserId(userId, { limit: 100, skip: 0 });
+            for (const chat of chats) {
+                io.to(`chat:${chat._id}`).emit('user:status', {
+                    userId: String(userId),
+                    status: updated.status,
+                    profile_id: String(updated._id),
+                    username: updated.username,
+                    displayName: updated.displayName,
+                    updatedAt: updated.updatedAt,
+                });
+            }
+        }
 
         res.json({ avatar: relativePath });
     } catch (e) {
@@ -71,13 +87,30 @@ async function uploadAttachment(req, res, next) {
 
         const io = req.app.get('io');
         if (io) {
-            const room = `chat:${chatId}`;
-            const sockets = await io.in(room).fetchSockets();
-            for (const socket of sockets) {
-                if (String(socket.data?.userId) !== String(userId)) {
-                    socket.emit('message:new', { message });
+            const { ProfileRepo } = require('../repos/profile.repo');
+            const chat = await chatRepo.getById(chatId);
+            if (chat) {
+                const creatorProfile = await ProfileRepo.getByUserId(userId);
+                const chatForPeer = {
+                    ...(typeof chat.toObject === 'function' ? chat.toObject() : chat),
+                    peer: creatorProfile ? {
+                        user_id: String(creatorProfile.user_id),
+                        profile_id: String(creatorProfile._id),
+                        username: creatorProfile.username,
+                        displayName: creatorProfile.displayName,
+                        status: creatorProfile.status || 'offline',
+                        last_online: creatorProfile.last_online,
+                    } : null,
+                };
+                const room = `chat:${chatId}`;
+                const sockets = await io.in(room).fetchSockets();
+                for (const sock of sockets) {
+                    if (String(sock.data?.userId) !== String(userId)) {
+                        sock.emit('chat:new', { chat: chatForPeer });
+                    }
                 }
             }
+            io.to(`chat:${chatId}`).emit('message:new', { message });
         }
 
         res.json({ message });
@@ -142,7 +175,12 @@ async function uploadChatAvatar(req, res, next) {
         }
 
         const relativePath = await saveChatAvatar(req.file.buffer, chatId, req.file.mimetype);
-        await ChatService.updateGroupMeta(userId, chatId, { avatar: relativePath });
+        const updated = await ChatService.updateGroupMeta(userId, chatId, { avatar: relativePath });
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`chat:${chatId}`).emit('chat:updated', { chat: updated });
+        }
 
         res.json({ avatar: relativePath });
     } catch (e) {
@@ -157,7 +195,7 @@ async function getChatAvatar(req, res, next) {
 
         try {
             await fs.promises.access(avatarPath);
-            res.setHeader('Cache-Control', 'max-age=604800');
+            res.setHeader('Cache-Control', 'no-cache');
             return res.sendFile(avatarPath);
         } catch {}
 

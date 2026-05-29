@@ -10,13 +10,14 @@ export function AuthSuccessPage() {
   const token = params.get('token');
   const uid = params.get('uid');
   const role = params.get('role');
+  const ap = params.get('ap');
   const complete = params.get('complete');
 
   if (!token) return <Navigate to="/login" replace />;
 
   if (!done.current) {
     done.current = true;
-    auth.setSession({ accessToken: token, user_id: uid ?? undefined, user: role ? { _id: uid ?? '', role } as any : undefined });
+    auth.setSession({ accessToken: token, user_id: uid ?? undefined, user: { _id: uid ?? '', role: role ?? 'User', authProvider: ap ?? 'google' } as any });
     if (complete === '0') {
       auth.setProfile({ isComplete: false } as any);
     }

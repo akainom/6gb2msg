@@ -8,6 +8,18 @@ const AttachmentSchema = new Schema({
     size:          { type: Number, required: true }
 }, { _id: false });
 
+const ReactionSchema = new Schema({
+    reaction:   { type: String, required: true },
+    user_id:    { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    created_at: { type: Date, default: Date.now }
+}, { _id: false });
+
+const ReplyToSchema = new Schema({
+    message_id: { type: Schema.Types.ObjectId, ref: 'Message' },
+    content:    { type: String },
+    sender_id:  { type: Schema.Types.ObjectId, ref: 'User' }
+}, { _id: false });
+
 const MessageSchema = new Schema({
     chat_id: {
         type: Schema.Types.ObjectId,
@@ -42,6 +54,16 @@ const MessageSchema = new Schema({
         required: function() {
             return this.is_forwarded === true;
         }
+    },
+    /** NEW: реакции на сообщение */
+    reactions: {
+        type: [ReactionSchema],
+        default: []
+    },
+    /** NEW: ответ на сообщение */
+    reply_to: {
+        type: ReplyToSchema,
+        default: null
     },
     status: {
         is_read: { type: Boolean, default: false },

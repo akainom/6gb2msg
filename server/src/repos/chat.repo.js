@@ -174,6 +174,22 @@ class ChatRepo extends Base {
             { new: true, runValidators: true, session: session }
         ).lean();
     }
+
+    async setPin(chatId, pinnedData) {
+        return this.model.findByIdAndUpdate(
+            chatId,
+            { $set: { pinned: pinnedData } },
+            { new: true }
+        ).select('pinned').lean();
+    }
+
+    async removePin(chatId) {
+        return this.model.findByIdAndUpdate(
+            chatId,
+            { $set: { pinned: null } },
+            { new: true }
+        ).lean();
+    }
 }
 
 module.exports = new ChatRepo();
